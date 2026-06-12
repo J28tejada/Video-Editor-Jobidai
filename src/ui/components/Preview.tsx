@@ -20,6 +20,7 @@ import {
 } from '../../core/compositor/renderFrame';
 import { drawActiveOverlays } from '../../core/compositor/overlays';
 import { getCachedTimelineAudio, isTimelineAudioReady } from '../../core/media/audioTimeline';
+import { getSharedAudioContext } from '../../lib/audioContext';
 import { PreviewTransformBox } from './PreviewTransformBox';
 
 export function Preview() {
@@ -86,8 +87,10 @@ export function Preview() {
 
       let elapsed: () => number;
       if (audio && startPlayhead < audio.duration) {
-        audioCtx = new AudioContext();
-        await audioCtx.resume();
+        audioCtx = getSharedAudioContext();
+        // resume() is idempotent; on iOS it was already called synchronously
+        // in the play button's click handler via unlockAudio().
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
         node = audioCtx.createBufferSource();
         node.buffer = audio;
         node.connect(audioCtx.destination);
@@ -145,7 +148,7 @@ export function Preview() {
       } catch {
         // already stopped
       }
-      audioCtx?.close().catch(() => {});
+      // Do not close audioCtx — it is a shared singleton.
       base.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

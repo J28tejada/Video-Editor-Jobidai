@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { EditorProvider, useEditor } from './state/EditorContext';
+import { ClipSectionProvider } from './state/ClipSectionContext';
 import { detectCapabilities, type Capabilities } from './lib/capabilities';
 import { Toolbar } from './ui/components/Toolbar';
 import { Preview } from './ui/components/Preview';
@@ -20,7 +21,9 @@ import { MobileNav } from './ui/components/MobileNav';
 export default function App() {
   return (
     <EditorProvider>
-      <Editor />
+      <ClipSectionProvider>
+        <Editor />
+      </ClipSectionProvider>
     </EditorProvider>
   );
 }

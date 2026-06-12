@@ -67,8 +67,17 @@ export function Preview() {
     if (!visible) return;
 
     const proj0 = projectRef.current;
-    const base = new Canvas2DCompositor(proj0.width, proj0.height); // offscreen
-    const frameInterval = 1 / Math.max(1, proj0.fps);
+    // Mobile: half-res offscreen compositor → 4× fewer pixels per decode-pump
+    // iteration, significantly reducing Canvas 2D workload per frame.
+    const mobile = typeof window !== 'undefined' && window.innerWidth <= 760;
+    const baseScale = mobile ? 0.5 : 1;
+    const base = new Canvas2DCompositor(
+      Math.round(proj0.width * baseScale),
+      Math.round(proj0.height * baseScale),
+    );
+    // Mobile: target 24 fps to give the hardware more decode budget per frame.
+    const targetFps = mobile ? Math.min(proj0.fps, 24) : proj0.fps;
+    const frameInterval = 1 / Math.max(1, targetFps);
 
     let cancelled = false;
     let audioCtx: AudioContext | null = null;
@@ -132,7 +141,12 @@ export function Preview() {
         }
       })();
 
-      // Display loop: 60fps composite of base layer + text/karaoke overlays.
+      // Display loop: canvas at 60fps, but React state (seek) throttled to
+      // ~15fps on mobile to avoid 60 re-renders/sec of Timeline & other consumers.
+      let lastSeekT = -Infinity;
+      const seekHz = mobile ? 15 : 60;
+      const seekThresh = 1 / seekHz;
+
       const draw = () => {
         if (cancelled) return;
         const t = now();
@@ -141,9 +155,12 @@ export function Preview() {
           pause();
           return;
         }
-        seek(t);
         visible.drawFrame(base.canvas, { clear: true });
         drawActiveOverlays(visible, projectRef.current, t);
+        if (t - lastSeekT >= seekThresh) {
+          seek(t);
+          lastSeekT = t;
+        }
         raf = requestAnimationFrame(draw);
       };
       raf = requestAnimationFrame(draw);

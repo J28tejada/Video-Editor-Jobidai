@@ -3,6 +3,10 @@
  * on overlay tracks, placement (scale + position) for logos / picture-in-picture.
  * Renders nothing when no clip is selected.
  */
+import {
+  Scissors, RotateCcw,
+  ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight, Crosshair,
+} from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 import { clipGain, DEFAULT_TRANSFORM, hasSpeedCurve, type ClipFilters, type SpeedKey } from '../../core/timeline/types';
 
@@ -65,7 +69,7 @@ export function ClipInspector() {
       </div>
 
       <label className="inspector__field inspector__field--inline inspector__applyall">
-        <span>✂️ Quitar fondo (IA)</span>
+        <span className="inspector__icon-label"><Scissors size={14} /> Quitar fondo (IA)</span>
         <input
           type="checkbox"
           checked={!!clip.removeBg}
@@ -118,7 +122,7 @@ export function ClipInspector() {
       </div>
       <p className="inspector__note">
         {hasCurve
-          ? '⏱️ Curva de tiempo activa (la velocidad varía a lo largo del clip).'
+          ? 'Curva de tiempo activa — la velocidad varía a lo largo del clip.'
           : 'Cambiar la velocidad ajusta la duración del clip. El audio cambia de tono.'}
       </p>
       <div className="inspector__divider" />
@@ -129,7 +133,7 @@ export function ClipInspector() {
           onClick={() => setClipFiltersAll(clip.id, undefined)}
           title="Restablecer color"
         >
-          ↺
+          <RotateCcw size={14} />
         </button>
       </div>
       <label className="inspector__field inspector__field--inline">
@@ -316,22 +320,22 @@ export function ClipInspector() {
           <div className="inspector__corners">
             {(
               [
-                ['↖', 0.18, 0.12],
-                ['↗', 0.82, 0.12],
-                ['⤬', 0.5, 0.5],
-                ['↙', 0.18, 0.88],
-                ['↘', 0.82, 0.88],
+                [<ArrowUpLeft size={16} />,    'Esquina sup. izq.', 0.18, 0.12],
+                [<ArrowUpRight size={16} />,   'Esquina sup. der.', 0.82, 0.12],
+                [<Crosshair size={16} />,      'Centro',            0.5,  0.5],
+                [<ArrowDownLeft size={16} />,  'Esquina inf. izq.', 0.18, 0.88],
+                [<ArrowDownRight size={16} />, 'Esquina inf. der.', 0.82, 0.88],
               ] as const
-            ).map(([label, x, y]) => (
+            ).map(([icon, title, x, y]) => (
               <button
-                key={label}
+                key={title}
                 onClick={() => {
                   setClipTransform(clip.id, { xNorm: x, yNorm: y, scale: Math.min(tf.scale, 0.35) });
                   endGesture();
                 }}
-                title="Colocar en esquina"
+                title={title}
               >
-                {label}
+                {icon}
               </button>
             ))}
           </div>

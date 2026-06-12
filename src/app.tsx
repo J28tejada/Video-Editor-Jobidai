@@ -3,6 +3,7 @@
  * toolbar / preview / timeline. Whole-window drag-and-drop imports video files.
  */
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { EditorProvider, useEditor } from './state/EditorContext';
 import { detectCapabilities, type Capabilities } from './lib/capabilities';
 import { Toolbar } from './ui/components/Toolbar';
@@ -161,7 +162,7 @@ function Editor() {
 
       {anySelected && (
         <button className="sheet-close" onClick={() => editor.select(null)} title="Cerrar panel">
-          ✕
+          <X size={18} />
         </button>
       )}
 

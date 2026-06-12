@@ -5,6 +5,7 @@
  * - Always: shows storage used / quota with a warning when near the limit.
  */
 import { useEffect, useState } from 'react';
+import { HardDrive, Download, X } from 'lucide-react';
 import { detectPlatform, estimateStorage, formatBytes, type StorageEstimate } from '../../lib/platform';
 
 type InstallPromptEvent = Event & {
@@ -53,13 +54,13 @@ export function PwaStatus() {
           className={`pwa__storage${nearLimit ? ' pwa__storage--warn' : ''}`}
           title="Almacenamiento usado por la app (proyecto + media + modelos)"
         >
-          💾 {formatBytes(storage.usage)} / {formatBytes(storage.quota)}
+          <HardDrive size={13} /> {formatBytes(storage.usage)} / {formatBytes(storage.quota)}
         </span>
       )}
 
       {installEvent && (
-        <button className="pwa__install" onClick={install}>
-          ⬇ Instalar app
+        <button className="pwa__install toolbar__icon-label" onClick={install}>
+          <Download size={14} /> Instalar app
         </button>
       )}
 
@@ -74,7 +75,7 @@ export function PwaStatus() {
             }}
             title="Ocultar"
           >
-            ✕
+            <X size={14} />
           </button>
         </span>
       )}

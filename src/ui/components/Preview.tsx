@@ -20,7 +20,7 @@ import {
 } from '../../core/compositor/renderFrame';
 import { drawActiveOverlays } from '../../core/compositor/overlays';
 import { getCachedTimelineAudio, isTimelineAudioReady } from '../../core/media/audioTimeline';
-import { getSharedAudioContext } from '../../lib/audioContext';
+import { waitForAudioContext } from '../../lib/audioContext';
 import { PreviewTransformBox } from './PreviewTransformBox';
 
 export function Preview() {
@@ -79,18 +79,27 @@ export function Preview() {
       const startPlayhead = playheadRef.current;
 
       // Resolve (cached) timeline audio and set up the master clock.
-      const needsBuild = !isTimelineAudioReady(projectRef.current);
-      if (needsBuild) setStatus('Preparando audio…');
-      const audio = await getCachedTimelineAudio(projectRef.current);
-      if (needsBuild) setStatus(null);
+      // Wrapped in try/catch: if audio decoding fails on mobile (e.g. WebCodecs
+      // audio unavailable) we gracefully fall back to a wall-clock timer so
+      // video still plays (silently) rather than freezing the entire playback.
+      let audio: AudioBuffer | null = null;
+      try {
+        const needsBuild = !isTimelineAudioReady(projectRef.current);
+        if (needsBuild) setStatus('Preparando audio…');
+        audio = await getCachedTimelineAudio(projectRef.current);
+        if (needsBuild) setStatus(null);
+      } catch {
+        setStatus(null);
+      }
       if (cancelled) return;
 
       let elapsed: () => number;
       if (audio && startPlayhead < audio.duration) {
-        audioCtx = getSharedAudioContext();
-        // resume() is idempotent; on iOS it was already called synchronously
-        // in the play button's click handler via unlockAudio().
-        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        // waitForAudioContext() awaits the resume() Promise that was triggered
+        // synchronously in the play button's click handler (unlockAudio()).
+        // This eliminates a race where the context is still 'suspended' here
+        // because the microtask-based resume hasn't resolved yet.
+        audioCtx = await waitForAudioContext();
         node = audioCtx.createBufferSource();
         node.buffer = audio;
         node.connect(audioCtx.destination);

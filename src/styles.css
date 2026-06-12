@@ -24,6 +24,27 @@
 
 * { box-sizing: border-box; }
 
+/* Lucide SVG icons — align inline with text */
+svg.lucide {
+  display: inline-block;
+  vertical-align: -0.2em;
+  flex-shrink: 0;
+}
+
+/* Buttons that combine an icon + text label */
+.toolbar__icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Inspector label with an inline icon */
+.inspector__icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 html, body, #root {
   margin: 0;
   height: 100%;

@@ -3,6 +3,10 @@
  */
 import { useRef, useState } from 'react';
 import {
+  Play, Pause, Scissors, Music, Type, Volume2, Trash2,
+  Sparkles, Download, Undo2, Redo2,
+} from 'lucide-react';
+import {
   QUALITY_HIGH,
   QUALITY_MEDIUM,
   QUALITY_LOW,
@@ -214,28 +218,29 @@ export function Toolbar({ codec }: Props) {
 
       <div className="toolbar__group">
         <button onClick={undo} disabled={!!busy || !canUndo} title="Deshacer (Cmd+Z)">
-          ↶
+          <Undo2 size={15} />
         </button>
         <button onClick={redo} disabled={!!busy || !canRedo} title="Rehacer (Cmd+Shift+Z)">
-          ↷
+          <Redo2 size={15} />
         </button>
       </div>
 
       <div className="toolbar__group">
         <button
+          className="toolbar__icon-label"
           onClick={() => { unlockAudio(); togglePlay(); }}
           disabled={!!busy || duration <= 0}
         >
-          {isPlaying ? '❚❚ Pausa' : '▶ Reproducir'}
+          {isPlaying ? <><Pause size={14} /> Pausa</> : <><Play size={14} /> Reproducir</>}
         </button>
-        <button onClick={split} disabled={!!busy} title="Cortar en el cursor">
-          ✂ Cortar
+        <button className="toolbar__icon-label" onClick={split} disabled={!!busy} title="Cortar en el cursor">
+          <Scissors size={14} /> Cortar
         </button>
-        <button onClick={addText} disabled={!!busy} title="Añadir texto en el cursor">
-          T+ Texto
+        <button className="toolbar__icon-label" onClick={addText} disabled={!!busy} title="Añadir texto en el cursor">
+          <Type size={14} /> Texto
         </button>
-        <button onClick={() => musicRef.current?.click()} disabled={!!busy} title="Música de fondo">
-          🎵 Música
+        <button className="toolbar__icon-label" onClick={() => musicRef.current?.click()} disabled={!!busy} title="Música de fondo">
+          <Music size={14} /> Música
         </button>
         <input
           ref={musicRef}
@@ -249,8 +254,8 @@ export function Toolbar({ codec }: Props) {
           }}
         />
         <div className="toolbar__group--silence" style={{ display: 'inline-block' }}>
-          <button onClick={() => setSfxOpen((o) => !o)} disabled={!!busy} title="Efectos de sonido en el cursor">
-            🔊 SFX
+          <button className="toolbar__icon-label" onClick={() => setSfxOpen((o) => !o)} disabled={!!busy} title="Efectos de sonido en el cursor">
+            <Volume2 size={14} /> SFX
           </button>
           {sfxOpen && (
             <div className="popover">
@@ -295,13 +300,13 @@ export function Toolbar({ codec }: Props) {
           onClick={removeSelected}
           disabled={!!busy || (!selectedClipId && !selectedOverlayId)}
         >
-          🗑 Borrar
+          <Trash2 size={14} /> Borrar
         </button>
       </div>
 
       <div className="toolbar__group toolbar__group--silence">
-        <button onClick={() => setSilenceOpen((o) => !o)} disabled={!!busy} title="Detectar y quitar silencios">
-          ✂️ Silencios
+        <button className="toolbar__icon-label" onClick={() => setSilenceOpen((o) => !o)} disabled={!!busy} title="Detectar y quitar silencios">
+          <Scissors size={14} /> Silencios
         </button>
         {silenceOpen && (
           <div className="popover">
@@ -384,8 +389,8 @@ export function Toolbar({ codec }: Props) {
               <option value="Xenova/whisper-base">Equilibrado (base)</option>
               <option value="Xenova/whisper-small">Preciso (small)</option>
             </select>
-            <button onClick={onCaptions} disabled={!!busy} title="Transcribir el audio con IA (on-device)">
-              ✨ Subtítulos IA
+            <button className="toolbar__icon-label" onClick={onCaptions} disabled={!!busy} title="Transcribir el audio con IA (on-device)">
+              <Sparkles size={14} /> Subtítulos IA
             </button>
           </>
         )}
@@ -426,11 +431,11 @@ export function Toolbar({ codec }: Props) {
           </>
         ) : (
           <button
-            className="toolbar__export"
+            className="toolbar__export toolbar__icon-label"
             onClick={() => setExportOpen((o) => !o)}
             disabled={!!busy || !codec}
           >
-            ⬇ Exportar MP4
+            <Download size={14} /> Exportar MP4
           </button>
         )}
         {exportOpen && !exporting && (

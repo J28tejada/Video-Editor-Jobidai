@@ -3,6 +3,11 @@
  * Hidden on desktop via CSS. Replaces the desktop Toolbar for touch devices.
  */
 import { useRef, useState } from 'react';
+import {
+  Scissors, Music, Type, Sparkles, Download,
+  Undo2, Redo2, Play, Pause, Plus,
+  Trash2, Volume2, FolderOpen, X,
+} from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 import { exportProject } from '../../core/export/export';
 import { SYNTH_SFX } from '../../core/audio/sfx';
@@ -11,12 +16,12 @@ import { QUALITY_HIGH, type VideoCodec } from 'mediabunny';
 
 type Tab = 'edit' | 'audio' | 'text' | 'effects' | 'export';
 
-const TABS: { id: Tab; icon: string; label: string }[] = [
-  { id: 'edit',    icon: '✂',  label: 'Editar' },
-  { id: 'audio',   icon: '♪',  label: 'Audio' },
-  { id: 'text',    icon: 'T',  label: 'Texto' },
-  { id: 'effects', icon: '✦',  label: 'Efectos' },
-  { id: 'export',  icon: '↓',  label: 'Exportar' },
+const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
+  { id: 'edit',    icon: <Scissors size={20} />,  label: 'Editar' },
+  { id: 'audio',   icon: <Music size={20} />,      label: 'Audio' },
+  { id: 'text',    icon: <Type size={20} />,        label: 'Texto' },
+  { id: 'effects', icon: <Sparkles size={20} />,   label: 'Efectos' },
+  { id: 'export',  icon: <Download size={20} />,   label: 'Exportar' },
 ];
 
 export function MobileNav({ codec }: { codec: VideoCodec | null }) {
@@ -85,7 +90,9 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
     <div className="mnav">
       {/* ── Transport ── */}
       <div className="mnav__transport">
-        <button className="mnav__tbtn" onClick={undo} disabled={!canUndo} title="Deshacer">↶</button>
+        <button className="mnav__tbtn" onClick={undo} disabled={!canUndo} title="Deshacer">
+          <Undo2 size={18} />
+        </button>
         <div className="mnav__times">
           <span>{fmt(playhead)}</span>
           <span className="mnav__times-sep">/</span>
@@ -97,42 +104,46 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
           disabled={duration <= 0}
           aria-label={isPlaying ? 'Pausa' : 'Reproducir'}
         >
-          {isPlaying ? '⏸' : '▶'}
+          {isPlaying ? <Pause size={22} /> : <Play size={22} />}
         </button>
-        <button className="mnav__tbtn" onClick={redo} disabled={!canRedo} title="Rehacer">↷</button>
+        <button className="mnav__tbtn" onClick={redo} disabled={!canRedo} title="Rehacer">
+          <Redo2 size={18} />
+        </button>
         <button
           className="mnav__tbtn"
           onClick={() => importRef.current?.click()}
           title="Importar video/imagen"
-        >＋</button>
+        >
+          <Plus size={18} />
+        </button>
       </div>
 
       {/* ── Contextual tool strip ── */}
       <div className="mnav__tools">
         {activeTab === 'edit' && (
           <>
-            <MBtn icon="✂" label="Cortar" onClick={split} />
-            <MBtn icon="🗑" label="Borrar" onClick={removeSelected} disabled={!anySelected} />
+            <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
+            <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} disabled={!anySelected} />
           </>
         )}
 
         {activeTab === 'audio' && (
           <>
-            <MBtn icon="🎵" label="Música" onClick={() => musicRef.current?.click()} />
+            <MBtn icon={<Music size={20} />} label="Música" onClick={() => musicRef.current?.click()} />
             {SYNTH_SFX.map((s) => (
-              <MBtn key={s.name} icon="🔊" label={s.label} onClick={() => addSfx(s.name, s.durationSec)} />
+              <MBtn key={s.name} icon={<Volume2 size={20} />} label={s.label} onClick={() => addSfx(s.name, s.durationSec)} />
             ))}
-            <MBtn icon="📁" label="SFX" onClick={() => sfxRef.current?.click()} />
+            <MBtn icon={<FolderOpen size={20} />} label="SFX" onClick={() => sfxRef.current?.click()} />
           </>
         )}
 
         {activeTab === 'text' && (
-          <MBtn icon="T" label="Añadir texto" onClick={addText} />
+          <MBtn icon={<Type size={20} />} label="Añadir texto" onClick={addText} />
         )}
 
         {activeTab === 'effects' && (
           <MBtn
-            icon="✂️"
+            icon={<Scissors size={20} />}
             label="Quitar silencios"
             onClick={async () => {
               try {
@@ -150,10 +161,10 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
           isExporting ? (
             <>
               <span className="mnav__progress">{Math.round(exportProgress * 100)}%</span>
-              <MBtn icon="✕" label="Cancelar" onClick={() => abortRef.current?.abort()} />
+              <MBtn icon={<X size={20} />} label="Cancelar" onClick={() => abortRef.current?.abort()} />
             </>
           ) : (
-            <MBtn icon="↓" label="Exportar MP4" onClick={handleExport} disabled={!codec} accent />
+            <MBtn icon={<Download size={20} />} label="Exportar MP4" onClick={handleExport} disabled={!codec} accent />
           )
         )}
       </div>
@@ -186,7 +197,7 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 function MBtn({
   icon, label, onClick, disabled, accent,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;

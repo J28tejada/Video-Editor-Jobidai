@@ -9,6 +9,7 @@
  * Renders nothing when no overlay is selected.
  */
 import { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 import type { TextOverlay } from '../../core/timeline/types';
 import type { AnimType } from '../../core/timeline/anim';
@@ -60,7 +61,7 @@ export function OverlayInspector() {
     <aside className="inspector">
       <div className="inspector__head">
         <strong>{isCaption ? 'Subtítulo' : 'Texto'}</strong>
-        <button onClick={removeSelected} title="Borrar overlay">🗑</button>
+        <button onClick={removeSelected} title="Borrar overlay"><Trash2 size={16} /></button>
       </div>
 
       {isCaption && (

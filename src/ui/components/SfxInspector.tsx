@@ -2,6 +2,7 @@
  * Inspector for the selected sound effect: volume and timing.
  * Renders nothing when no SFX is selected.
  */
+import { Trash2 } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 
 export function SfxInspector() {
@@ -13,7 +14,7 @@ export function SfxInspector() {
     <aside className="inspector">
       <div className="inspector__head">
         <strong>Efecto de sonido</strong>
-        <button onClick={removeSelected} title="Quitar SFX">🗑</button>
+        <button onClick={removeSelected} title="Quitar SFX"><Trash2 size={16} /></button>
       </div>
 
       <p className="inspector__note">{sfx.synth ? `Sintetizado: ${sfx.synth}` : 'Audio importado'}</p>

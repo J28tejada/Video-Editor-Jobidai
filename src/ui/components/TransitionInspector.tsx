@@ -3,6 +3,7 @@
  * Renders nothing when no transition is selected.
  */
 import { useMemo } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 import type { TransitionKind } from '../../core/timeline/types';
 import { listGlTransitions } from '../../core/compositor/glTransitions';
@@ -17,7 +18,7 @@ export function TransitionInspector() {
     <aside className="inspector">
       <div className="inspector__head">
         <strong>Transición</strong>
-        <button onClick={removeSelected} title="Quitar transición">🗑</button>
+        <button onClick={removeSelected} title="Quitar transición"><Trash2 size={16} /></button>
       </div>
 
       <label className="inspector__field inspector__field--inline">

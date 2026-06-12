@@ -2,6 +2,7 @@
  * Inspector for the selected background-music item: volume, fades, loop, ducking.
  * Renders nothing when no music item is selected.
  */
+import { Trash2 } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 
 export function MusicInspector() {
@@ -15,7 +16,7 @@ export function MusicInspector() {
     <aside className="inspector">
       <div className="inspector__head">
         <strong>Música</strong>
-        <button onClick={removeSelected} title="Quitar música">🗑</button>
+        <button onClick={removeSelected} title="Quitar música"><Trash2 size={16} /></button>
       </div>
 
       <label className="inspector__field">

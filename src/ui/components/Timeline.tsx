@@ -8,6 +8,7 @@
  * - Click the ruler/empty area to seek; the playhead spans all lanes.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Plus, X, ArrowLeftRight, ChevronLeft, ChevronRight, Volume2, Music } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 import {
   clipDuration,
@@ -111,8 +112,8 @@ export function Timeline() {
         <span>{formatTime(playhead)}</span>
         <span className="timeline__sep">/</span>
         <span>{formatTime(duration)}</span>
-        <button className="timeline__addtrack" onClick={addTrack}>
-          ➕ Pista
+        <button className="timeline__addtrack toolbar__icon-label" onClick={addTrack}>
+          <Plus size={13} /> Pista
         </button>
         <span className="timeline__hint">
           {project.tracks.length} pista{project.tracks.length === 1 ? '' : 's'} ·{' '}
@@ -176,14 +177,14 @@ function TrackLane({ track }: { track: Track }) {
               title="Importar video en esta pista (en el cursor)"
               onClick={() => importRef.current?.click()}
             >
-              ＋
+              <Plus size={13} />
             </button>
             <button
               className="lane__btn"
               title="Eliminar pista"
               onClick={() => deleteTrack(track.id)}
             >
-              ✕
+              <X size={13} />
             </button>
             <input
               ref={importRef}
@@ -235,7 +236,7 @@ function TrackLane({ track }: { track: Track }) {
                   tr ? selectTransition(tr.id) : addTransitionAfter(clip.id, 'crossfade')
                 }
               >
-                {tr ? '⇄' : '+'}
+                {tr ? <ArrowLeftRight size={11} /> : <Plus size={11} />}
               </button>
             );
           })}
@@ -343,14 +344,14 @@ function ClipBlock({
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => onReorder(index - 1)}
             >
-              ◀
+              <ChevronLeft size={12} />
             </button>
             <button
               disabled={index === count - 1}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => onReorder(index + 1)}
             >
-              ▶
+              <ChevronRight size={12} />
             </button>
           </div>
         )}
@@ -442,7 +443,7 @@ function SfxLane() {
               onPointerDown={startDrag}
               title={label}
             >
-              <span className="sfx-block__label">🔊 {label}</span>
+              <span className="sfx-block__label"><Volume2 size={11} /> {label}</span>
             </div>
           );
         })}
@@ -529,7 +530,7 @@ function MusicBlock({
       title={name}
     >
       <span className="music-block__label">
-        🎵 {name}
+        <Music size={11} /> {name}
         {item.loop ? ' (loop)' : ''}
       </span>
     </div>

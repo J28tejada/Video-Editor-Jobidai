@@ -172,32 +172,65 @@ export async function buildTimelineAudioBuffer(
     gainNode.gain.value = gain;
     gainNode.connect(ctx.destination);
 
-    for await (const { buffer, timestamp } of media.audioSink.buffers(
-      clip.inPoint,
-      clip.outPoint,
-    )) {
-      const bufStart = timestamp;
-      const bufEnd = timestamp + buffer.duration;
+    // Try to decode via AudioBufferSink (WebCodecs path). On iOS < 16.4 or
+    // browsers without WebCodecs audio support, this may throw or yield nothing.
+    // In that case we fall back to the browser's native decodeAudioData().
+    let audioScheduled = false;
+    try {
+      for await (const { buffer, timestamp } of media.audioSink.buffers(
+        clip.inPoint,
+        clip.outPoint,
+      )) {
+        audioScheduled = true;
+        const bufStart = timestamp;
+        const bufEnd = timestamp + buffer.duration;
 
-      // Intersect this buffer with the clip's [inPoint, outPoint] window.
-      const playFromSrc = Math.max(bufStart, clip.inPoint);
-      const playToSrc = Math.min(bufEnd, clip.outPoint);
-      const srcDur = playToSrc - playFromSrc;
-      if (srcDur <= 0) continue;
+        // Intersect this buffer with the clip's [inPoint, outPoint] window.
+        const playFromSrc = Math.max(bufStart, clip.inPoint);
+        const playToSrc = Math.min(bufEnd, clip.outPoint);
+        const srcDur = playToSrc - playFromSrc;
+        if (srcDur <= 0) continue;
 
-      const offset = playFromSrc - bufStart; // into the source buffer
-      // Timeline position compresses by `speed`; the source portion plays for
-      // srcDur/speed wall-clock seconds when playbackRate = speed.
-      const when = clip.startInTimeline + (playFromSrc - clip.inPoint) / speed;
+        const offset = playFromSrc - bufStart; // into the source buffer
+        // Timeline position compresses by `speed`; the source portion plays for
+        // srcDur/speed wall-clock seconds when playbackRate = speed.
+        const when = clip.startInTimeline + (playFromSrc - clip.inPoint) / speed;
 
-      const node = ctx.createBufferSource();
-      node.buffer = buffer;
-      node.playbackRate.value = speed;
-      node.connect(gainNode);
+        const node = ctx.createBufferSource();
+        node.buffer = buffer;
+        node.playbackRate.value = speed;
+        node.connect(gainNode);
+        try {
+          node.start(when, offset, srcDur);
+        } catch {
+          // Scheduling outside the render window — safe to skip.
+        }
+      }
+    } catch {
+      // WebCodecs audio decoding failed — fall through to decodeAudioData().
+      audioScheduled = false;
+    }
+
+    if (!audioScheduled) {
+      // Native fallback: let the browser decode the entire file with its own
+      // audio decoder (AAC, MP3, Opus …), then schedule the relevant segment.
       try {
-        node.start(when, offset, srcDur);
+        const arrayBuf = await media.file.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arrayBuf);
+        const clipDur = clip.outPoint - clip.inPoint;
+        if (clipDur > 0 && decoded.duration > clip.inPoint) {
+          const node = ctx.createBufferSource();
+          node.buffer = decoded;
+          node.playbackRate.value = speed;
+          node.connect(gainNode);
+          try {
+            node.start(clip.startInTimeline, clip.inPoint, clipDur / speed);
+          } catch {
+            // outside render window
+          }
+        }
       } catch {
-        // Scheduling outside the render window — safe to skip.
+        // decodeAudioData also failed — this clip has no audio in the mix.
       }
     }
   }

@@ -608,64 +608,110 @@ input[type='color'] {
 .sheet-close { display: none; }
 
 /* ============================================================================
-   Mobile / touch (≤ 760px): bottom-sheet inspector, scrollable toolbar
+   MobileNav — CapCut-style transport + bottom tabs (desktop: hidden)
+   ========================================================================== */
+.mnav { display: none; }
+
+/* ============================================================================
+   Mobile / touch (≤ 760px) — CapCut-inspired layout
    ========================================================================== */
 @media (max-width: 760px) {
-  .app__header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); gap: 8px; }
+  /* ── App shell ── */
+  .app__header {
+    padding: 10px 14px;
+    padding-top: max(10px, env(safe-area-inset-top));
+    gap: 8px;
+  }
   .app__header h1 { font-size: 14px; }
   .pwa { gap: 8px; }
   .pwa__storage { display: none; }
 
-  /* Toolbar: single scrollable row, no clipping context for fixed popovers */
-  .toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: visible;
-    backdrop-filter: none;
-    padding: 8px 12px;
-    gap: 6px;
-    scrollbar-width: none;
-  }
-  .toolbar::-webkit-scrollbar { display: none; }
-  .toolbar__group { flex: none; }
-  .toolbar__group--right { margin-left: 4px; }
-  .toolbar button { padding: 9px 12px; font-size: 13px; }
+  /* Hide the desktop toolbar completely on mobile */
+  .toolbar { display: none; }
 
-  /* Popovers become bottom sheets (toolbar isn't a containing block now) */
+  /* Stage: preview fills all available space */
+  .stage { flex: 1; min-height: 0; }
+  .preview { flex: 1; padding: 8px; }
+
+  /* Timeline — more compact */
+  .timeline {
+    height: 160px;
+    padding: 6px 8px 8px;
+  }
+  .timeline__meta { margin-bottom: 4px; font-size: 11px; }
+  .timeline__hint { display: none; }
+
+  /* Popovers become bottom sheets — same pill handle as inspector */
   .popover, .popover--right {
     position: fixed;
-    left: 10px;
-    right: 10px;
-    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    bottom: 0;
     top: auto;
     width: auto;
-    max-height: 70vh;
+    max-height: 75vh;
     overflow-y: auto;
     z-index: 60;
+    border-radius: 20px 20px 0 0;
+    border: none;
+    border-top: 1px solid var(--border-strong);
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.7);
+    padding: 0 18px max(24px, env(safe-area-inset-bottom));
+  }
+  .popover::before, .popover--right::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    margin: 14px auto 16px;
+    flex-shrink: 0;
+  }
+  .popover__field {
+    font-size: 14px;
+    gap: 10px;
+  }
+  .popover__field select {
+    padding: 11px 10px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+  .popover__apply {
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 14px;
+  }
+  .popover__note, .popover__hint {
+    font-size: 12px;
+    line-height: 1.6;
   }
 
-  /* Preview gets the space; timeline a bit shorter */
-  .preview { padding: 12px; }
-  .timeline { height: 200px; padding: 8px 10px 10px; }
-  .timeline__meta { margin-bottom: 6px; }
-
-  /* Inspector → bottom sheet */
+  /* Inspector → bottom sheet (above mnav) */
   .inspectors:not(:empty) {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    max-height: 64vh;
+    max-height: 72vh;
     z-index: 40;
+    overflow: hidden;
   }
   .inspector {
-    width: auto;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
     border-left: none;
     border-top: 1px solid var(--border-strong);
-    border-radius: 18px 18px 0 0;
-    box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.65);
-    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.7);
+    /* Scroll past MobileNav (~185px) + safe area */
+    padding: 0 16px max(200px, calc(env(safe-area-inset-bottom) + 185px));
+    gap: 16px;
   }
+  /* Drag handle */
   .inspector::before {
     content: '';
     display: block;
@@ -673,10 +719,100 @@ input[type='color'] {
     height: 4px;
     border-radius: 999px;
     background: var(--border-strong);
-    margin: 0 auto 10px;
+    margin: 14px auto 12px;
+    flex-shrink: 0;
   }
 
-  /* Floating deselect / close button */
+  /* ── Inspector content overhaul ── */
+
+  /* Section headers: larger, easier to scan */
+  .inspector__head {
+    font-size: 16px;
+    padding-bottom: 4px;
+    margin-top: 4px;
+  }
+  .inspector__head strong { padding-left: 13px; }
+  .inspector__head strong::before { width: 5px; height: 16px; }
+
+  /* Field labels */
+  .inspector__field {
+    font-size: 14px;
+    gap: 10px;
+  }
+
+  /* Notes: wrap correctly, readable size */
+  .inspector__note {
+    font-size: 12px;
+    line-height: 1.65;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  /* Inline fields (label left, control right):
+     Stack vertically when label is long to prevent overflow */
+  .inspector__field--inline {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .inspector__field--inline > span { min-width: 0; flex-shrink: 1; }
+
+  /* Inputs, selects, textareas */
+  .inspector__field input[type='text'],
+  .inspector__field input[type='number'],
+  .inspector__field textarea,
+  .inspector__field select {
+    padding: 11px 12px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+
+  /* Bigger checkboxes */
+  .inspector__field input[type='checkbox'] {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  /* Color picker */
+  input[type='color'] {
+    width: 48px;
+    height: 38px;
+    border-radius: 8px;
+  }
+
+  /* Preset/corner buttons — proper 44px touch targets */
+  .inspector__corners button, .inspector__presets button {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 10px 8px;
+    border-radius: 10px;
+  }
+
+  /* applyall / highlighted section */
+  .inspector__applyall {
+    padding: 12px 14px;
+    border-radius: 12px;
+  }
+
+  /* Range sliders */
+  input[type='range'] { height: 6px; }
+  input[type='range']::-webkit-slider-thumb { width: 26px; height: 26px; }
+  input[type='range']::-moz-range-thumb { width: 26px; height: 26px; }
+
+  /* Dividers: more breathing room */
+  .inspector__divider { margin: 6px 0; }
+
+  /* Row (two fields side by side) — keep on mobile but with gap */
+  .inspector__row { gap: 14px; }
+
+  /* Bigger touch targets for clip handles & cuts */
+  .clip__handle { width: 14px; }
+  .cut { width: 28px; height: 28px; font-size: 14px; }
+
+  /* Floating close/deselect FAB */
   .sheet-close {
     display: flex;
     align-items: center;
@@ -685,23 +821,161 @@ input[type='color'] {
     top: max(64px, calc(env(safe-area-inset-top) + 54px));
     right: 14px;
     z-index: 50;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: rgba(7, 7, 12, 0.7);
+    background: rgba(7, 7, 12, 0.8);
     border: 1px solid var(--border-strong);
     color: var(--text);
-    font-size: 16px;
+    font-size: 18px;
     cursor: pointer;
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   }
 
-  /* Bigger touch targets */
-  .clip__handle { width: 14px; }
-  input[type='range'] { height: 6px; }
-  input[type='range']::-webkit-slider-thumb { width: 22px; height: 22px; }
-  .inspector__field input, .inspector__field select, .inspector__field textarea { padding: 10px; font-size: 15px; }
-  .cut { width: 28px; height: 28px; font-size: 14px; }
+  /* ── MobileNav visible ── */
+  .mnav {
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-solid);
+    border-top: 1px solid var(--border);
+    flex: none;
+    z-index: 20;
+  }
+
+  /* Transport row */
+  .mnav__transport {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 10px 16px 6px;
+  }
+  .mnav__tbtn {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    line-height: 1;
+    transition: background 0.12s;
+  }
+  .mnav__tbtn:hover:not(:disabled) { background: rgba(255,255,255,0.08); }
+  .mnav__tbtn:disabled { opacity: 0.35; }
+
+  .mnav__times {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    min-width: 100px;
+    justify-content: center;
+  }
+  .mnav__times-sep { opacity: 0.4; }
+
+  .mnav__play {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent-grad);
+    color: #04040a;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 20px rgba(99,102,241,0.45);
+    transition: transform 0.1s, filter 0.1s;
+    flex: none;
+  }
+  .mnav__play:hover:not(:disabled) { filter: brightness(1.1); }
+  .mnav__play:active:not(:disabled) { transform: scale(0.94); }
+  .mnav__play:disabled { opacity: 0.35; }
+  .mnav__play--pause { background: rgba(255,255,255,0.12); color: var(--text); box-shadow: none; }
+
+  /* Tool strip */
+  .mnav__tools {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    min-height: 72px;
+  }
+  .mnav__tools::-webkit-scrollbar { display: none; }
+
+  .mnav__tool-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px 14px;
+    cursor: pointer;
+    color: var(--text);
+    flex: none;
+    min-width: 60px;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .mnav__tool-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: var(--border-strong); }
+  .mnav__tool-btn:disabled { opacity: 0.35; }
+  .mnav__tool-btn--accent {
+    background: var(--accent-grad);
+    border-color: transparent;
+    color: #04040a;
+    box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+    font-weight: 700;
+  }
+  .mnav__tool-icon { font-size: 20px; line-height: 1; }
+  .mnav__tool-label { font-size: 10px; white-space: nowrap; color: var(--muted); }
+  .mnav__tool-btn--accent .mnav__tool-label { color: #04040a; }
+
+  .mnav__progress {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent-2);
+    padding: 0 8px;
+  }
+
+  /* Bottom tab bar */
+  .mnav__tabs {
+    display: flex;
+    border-top: 1px solid var(--border);
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+  .mnav__tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 10px 4px 8px;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .mnav__tab--active { color: var(--accent-2); }
+  .mnav__tab-icon {
+    font-size: 20px;
+    line-height: 1;
+    display: block;
+  }
+  .mnav__tab-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
 }
 
 /* ---- Drop overlay ---- */

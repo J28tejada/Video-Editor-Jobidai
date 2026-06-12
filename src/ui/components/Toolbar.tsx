@@ -12,6 +12,7 @@ import {
 import { useEditor } from '../../state/EditorContext';
 import { exportProject } from '../../core/export/export';
 import { SYNTH_SFX } from '../../core/audio/sfx';
+import { unlockAudio } from '../../lib/audioContext';
 
 const QUALITY_MAP: Record<string, Quality> = {
   high: QUALITY_HIGH,
@@ -221,7 +222,10 @@ export function Toolbar({ codec }: Props) {
       </div>
 
       <div className="toolbar__group">
-        <button onClick={togglePlay} disabled={!!busy || duration <= 0}>
+        <button
+          onClick={() => { unlockAudio(); togglePlay(); }}
+          disabled={!!busy || duration <= 0}
+        >
           {isPlaying ? '❚❚ Pausa' : '▶ Reproducir'}
         </button>
         <button onClick={split} disabled={!!busy} title="Cortar en el cursor">

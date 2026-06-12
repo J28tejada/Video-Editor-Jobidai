@@ -20,6 +20,7 @@ import {
 } from '../../core/compositor/renderFrame';
 import { drawActiveOverlays } from '../../core/compositor/overlays';
 import { getCachedTimelineAudio, isTimelineAudioReady } from '../../core/media/audioTimeline';
+import { waitForAudioContext } from '../../lib/audioContext';
 import { PreviewTransformBox } from './PreviewTransformBox';
 
 export function Preview() {
@@ -66,8 +67,17 @@ export function Preview() {
     if (!visible) return;
 
     const proj0 = projectRef.current;
-    const base = new Canvas2DCompositor(proj0.width, proj0.height); // offscreen
-    const frameInterval = 1 / Math.max(1, proj0.fps);
+    // Mobile: half-res offscreen compositor → 4× fewer pixels per decode-pump
+    // iteration, significantly reducing Canvas 2D workload per frame.
+    const mobile = typeof window !== 'undefined' && window.innerWidth <= 760;
+    const baseScale = mobile ? 0.5 : 1;
+    const base = new Canvas2DCompositor(
+      Math.round(proj0.width * baseScale),
+      Math.round(proj0.height * baseScale),
+    );
+    // Mobile: target 24 fps to give the hardware more decode budget per frame.
+    const targetFps = mobile ? Math.min(proj0.fps, 24) : proj0.fps;
+    const frameInterval = 1 / Math.max(1, targetFps);
 
     let cancelled = false;
     let audioCtx: AudioContext | null = null;
@@ -78,16 +88,27 @@ export function Preview() {
       const startPlayhead = playheadRef.current;
 
       // Resolve (cached) timeline audio and set up the master clock.
-      const needsBuild = !isTimelineAudioReady(projectRef.current);
-      if (needsBuild) setStatus('Preparando audio…');
-      const audio = await getCachedTimelineAudio(projectRef.current);
-      if (needsBuild) setStatus(null);
+      // Wrapped in try/catch: if audio decoding fails on mobile (e.g. WebCodecs
+      // audio unavailable) we gracefully fall back to a wall-clock timer so
+      // video still plays (silently) rather than freezing the entire playback.
+      let audio: AudioBuffer | null = null;
+      try {
+        const needsBuild = !isTimelineAudioReady(projectRef.current);
+        if (needsBuild) setStatus('Preparando audio…');
+        audio = await getCachedTimelineAudio(projectRef.current);
+        if (needsBuild) setStatus(null);
+      } catch {
+        setStatus(null);
+      }
       if (cancelled) return;
 
       let elapsed: () => number;
       if (audio && startPlayhead < audio.duration) {
-        audioCtx = new AudioContext();
-        await audioCtx.resume();
+        // waitForAudioContext() awaits the resume() Promise that was triggered
+        // synchronously in the play button's click handler (unlockAudio()).
+        // This eliminates a race where the context is still 'suspended' here
+        // because the microtask-based resume hasn't resolved yet.
+        audioCtx = await waitForAudioContext();
         node = audioCtx.createBufferSource();
         node.buffer = audio;
         node.connect(audioCtx.destination);
@@ -120,7 +141,12 @@ export function Preview() {
         }
       })();
 
-      // Display loop: 60fps composite of base layer + text/karaoke overlays.
+      // Display loop: canvas at 60fps, but React state (seek) throttled to
+      // ~15fps on mobile to avoid 60 re-renders/sec of Timeline & other consumers.
+      let lastSeekT = -Infinity;
+      const seekHz = mobile ? 15 : 60;
+      const seekThresh = 1 / seekHz;
+
       const draw = () => {
         if (cancelled) return;
         const t = now();
@@ -129,9 +155,12 @@ export function Preview() {
           pause();
           return;
         }
-        seek(t);
         visible.drawFrame(base.canvas, { clear: true });
         drawActiveOverlays(visible, projectRef.current, t);
+        if (t - lastSeekT >= seekThresh) {
+          seek(t);
+          lastSeekT = t;
+        }
         raf = requestAnimationFrame(draw);
       };
       raf = requestAnimationFrame(draw);
@@ -145,7 +174,7 @@ export function Preview() {
       } catch {
         // already stopped
       }
-      audioCtx?.close().catch(() => {});
+      // Do not close audioCtx — it is a shared singleton.
       base.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -14,6 +14,7 @@ import { ClipInspector } from './ui/components/ClipInspector';
 import { MusicInspector } from './ui/components/MusicInspector';
 import { SfxInspector } from './ui/components/SfxInspector';
 import { PwaStatus } from './ui/components/PwaStatus';
+import { MobileNav } from './ui/components/MobileNav';
 
 export default function App() {
   return (
@@ -156,6 +157,7 @@ function Editor() {
         </div>
       </div>
       <Timeline />
+      <MobileNav codec={caps?.encodableCodec ?? null} />
 
       {anySelected && (
         <button className="sheet-close" onClick={() => editor.select(null)} title="Cerrar panel">

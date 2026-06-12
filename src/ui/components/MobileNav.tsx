@@ -2,13 +2,15 @@
  * Mobile-only bottom navigation + transport controls (CapCut style).
  * Hidden on desktop via CSS. Replaces the desktop Toolbar for touch devices.
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
   Scissors, Music, Type, Sparkles, Download,
   Undo2, Redo2, Play, Pause, Plus,
   Trash2, Volume2, FolderOpen, X,
+  Gauge, Palette, LayoutTemplate, Mic,
 } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
+import { useClipSection, type ClipSection } from '../../state/ClipSectionContext';
 import { exportProject } from '../../core/export/export';
 import { SYNTH_SFX } from '../../core/audio/sfx';
 import { unlockAudio } from '../../lib/audioContext';
@@ -24,6 +26,15 @@ const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
   { id: 'export',  icon: <Download size={20} />,   label: 'Exportar' },
 ];
 
+// Clip section definitions shown when a clip is selected
+const CLIP_SECTIONS: { id: ClipSection; icon: React.ReactNode; label: string }[] = [
+  { id: 'removeBg', icon: <Scissors size={18} />, label: 'Fondo IA' },
+  { id: 'speed',    icon: <Gauge size={18} />,    label: 'Velocidad' },
+  { id: 'color',    icon: <Palette size={18} />,  label: 'Color' },
+  { id: 'frame',    icon: <LayoutTemplate size={18} />, label: 'Encuadre' },
+  { id: 'audio',    icon: <Mic size={18} />,      label: 'Audio' },
+];
+
 export function MobileNav({ codec }: { codec: VideoCodec | null }) {
   const [activeTab, setActiveTab] = useState<Tab>('edit');
   const [isExporting, setIsExporting] = useState(false);
@@ -32,6 +43,8 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
   const musicRef = useRef<HTMLInputElement>(null);
   const sfxRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+
+  const { section, setSection } = useClipSection();
 
   const {
     isPlaying, togglePlay, duration, playhead,
@@ -42,6 +55,11 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
     project,
     removeSilences,
   } = useEditor();
+
+  // Reset section when clip is deselected
+  useEffect(() => {
+    if (!selectedClipId) setSection(null);
+  }, [selectedClipId, setSection]);
 
   const handlePlay = () => {
     unlockAudio();
@@ -120,12 +138,28 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 
       {/* ── Contextual tool strip ── */}
       <div className="mnav__tools">
-        {activeTab === 'edit' && (
+        {/* When clip selected: show clip-section chips + edit actions */}
+        {selectedClipId && activeTab === 'edit' ? (
+          <>
+            <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
+            <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} />
+            <div className="mnav__sep" />
+            {CLIP_SECTIONS.map(({ id, icon, label }) => (
+              <MBtn
+                key={id}
+                icon={icon}
+                label={label}
+                onClick={() => setSection(section === id ? null : id)}
+                active={section === id}
+              />
+            ))}
+          </>
+        ) : activeTab === 'edit' ? (
           <>
             <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
             <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} disabled={!anySelected} />
           </>
-        )}
+        ) : null}
 
         {activeTab === 'audio' && (
           <>
@@ -195,17 +229,18 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 }
 
 function MBtn({
-  icon, label, onClick, disabled, accent,
+  icon, label, onClick, disabled, accent, active,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   accent?: boolean;
+  active?: boolean;
 }) {
   return (
     <button
-      className={`mnav__tool-btn${accent ? ' mnav__tool-btn--accent' : ''}`}
+      className={`mnav__tool-btn${accent ? ' mnav__tool-btn--accent' : ''}${active ? ' mnav__tool-btn--active' : ''}`}
       onClick={onClick}
       disabled={disabled}
     >

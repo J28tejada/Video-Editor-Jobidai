@@ -732,6 +732,11 @@ input[type='color'] {
     padding: 0 16px max(200px, calc(env(safe-area-inset-bottom) + 185px));
     gap: 16px;
   }
+  /* Section-only inspector: no need for heavy bottom padding (less content) */
+  .inspector--section {
+    padding-bottom: max(200px, calc(env(safe-area-inset-bottom) + 185px));
+    max-height: 55vh;
+  }
   /* Drag handle */
   .inspector::before {
     content: '';
@@ -949,6 +954,19 @@ input[type='color'] {
   }
   .mnav__tool-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: var(--border-strong); }
   .mnav__tool-btn:disabled { opacity: 0.35; }
+  .mnav__tool-btn--active {
+    background: rgba(99,102,241,0.18);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .mnav__tool-btn--active .mnav__tool-label { color: var(--accent); }
+  .mnav__sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border-strong);
+    margin: 4px 2px;
+    flex-shrink: 0;
+  }
   .mnav__tool-btn--accent {
     background: var(--accent-grad);
     border-color: transparent;

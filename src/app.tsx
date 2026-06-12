@@ -102,6 +102,13 @@ function Editor() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const anySelected =
+    !!editor.selectedClipId ||
+    !!editor.selectedOverlayId ||
+    !!editor.selectedTransitionId ||
+    !!editor.selectedMusicId ||
+    !!editor.selectedSfxId;
+
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     dragDepth.current = 0;
@@ -140,13 +147,21 @@ function Editor() {
       <Toolbar codec={caps?.encodableCodec ?? null} />
       <div className="stage">
         <Preview />
-        <OverlayInspector />
-        <TransitionInspector />
-        <ClipInspector />
-        <MusicInspector />
-        <SfxInspector />
+        <div className="inspectors">
+          <OverlayInspector />
+          <TransitionInspector />
+          <ClipInspector />
+          <MusicInspector />
+          <SfxInspector />
+        </div>
       </div>
       <Timeline />
+
+      {anySelected && (
+        <button className="sheet-close" onClick={() => editor.select(null)} title="Cerrar panel">
+          ✕
+        </button>
+      )}
 
       {dragging && (
         <div className="dropzone-overlay">Suelta videos o imágenes aquí para importar</div>

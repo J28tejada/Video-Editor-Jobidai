@@ -601,6 +601,109 @@ input[type='color'] {
   box-shadow: 0 0 10px rgba(34, 211, 238, 0.9);
 }
 
+/* ---- Inspector host (side column on desktop) ---- */
+.inspectors { display: flex; flex: none; }
+.inspectors:empty { display: none; }
+
+.sheet-close { display: none; }
+
+/* ============================================================================
+   Mobile / touch (≤ 760px): bottom-sheet inspector, scrollable toolbar
+   ========================================================================== */
+@media (max-width: 760px) {
+  .app__header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); gap: 8px; }
+  .app__header h1 { font-size: 14px; }
+  .pwa { gap: 8px; }
+  .pwa__storage { display: none; }
+
+  /* Toolbar: single scrollable row, no clipping context for fixed popovers */
+  .toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    backdrop-filter: none;
+    padding: 8px 12px;
+    gap: 6px;
+    scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar { display: none; }
+  .toolbar__group { flex: none; }
+  .toolbar__group--right { margin-left: 4px; }
+  .toolbar button { padding: 9px 12px; font-size: 13px; }
+
+  /* Popovers become bottom sheets (toolbar isn't a containing block now) */
+  .popover, .popover--right {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    top: auto;
+    width: auto;
+    max-height: 70vh;
+    overflow-y: auto;
+    z-index: 60;
+  }
+
+  /* Preview gets the space; timeline a bit shorter */
+  .preview { padding: 12px; }
+  .timeline { height: 200px; padding: 8px 10px 10px; }
+  .timeline__meta { margin-bottom: 6px; }
+
+  /* Inspector → bottom sheet */
+  .inspectors:not(:empty) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 64vh;
+    z-index: 40;
+  }
+  .inspector {
+    width: auto;
+    border-left: none;
+    border-top: 1px solid var(--border-strong);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.65);
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .inspector::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    margin: 0 auto 10px;
+  }
+
+  /* Floating deselect / close button */
+  .sheet-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: max(64px, calc(env(safe-area-inset-top) + 54px));
+    right: 14px;
+    z-index: 50;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(7, 7, 12, 0.7);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+  }
+
+  /* Bigger touch targets */
+  .clip__handle { width: 14px; }
+  input[type='range'] { height: 6px; }
+  input[type='range']::-webkit-slider-thumb { width: 22px; height: 22px; }
+  .inspector__field input, .inspector__field select, .inspector__field textarea { padding: 10px; font-size: 15px; }
+  .cut { width: 28px; height: 28px; font-size: 14px; }
+}
+
 /* ---- Drop overlay ---- */
 .dropzone-overlay {
   position: fixed;

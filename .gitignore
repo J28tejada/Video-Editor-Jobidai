@@ -5,3 +5,4 @@ dist-ssr
 .DS_Store
 node_modules/.tmp
 .vite
+.vercel

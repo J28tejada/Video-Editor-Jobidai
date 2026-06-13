@@ -56,7 +56,6 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
   const {
     isPlaying, togglePlay, duration, playhead,
     split, removeSelected, selectedClipId,
-    selectedOverlayId, selectedMusicId, selectedSfxId, selectedTransitionId,
     addText, importMusic, addSfx, importSfx, importFiles,
     undo, redo, canUndo, canRedo,
     project,
@@ -97,10 +96,6 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
       setIsExporting(false); abortRef.current = null;
     }
   };
-
-  const anySelected =
-    !!selectedClipId || !!selectedOverlayId ||
-    !!selectedMusicId || !!selectedSfxId || !!selectedTransitionId;
 
   const fmt = (s: number) => {
     const t = Math.max(0, s);
@@ -211,12 +206,7 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
             </div>
           )}
 
-          {activeTab === 'edit' && anySelected && (
-            <div className="mnav__tools">
-              <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
-              <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} disabled={!anySelected} />
-            </div>
-          )}
+          {/* Edit tab has no tool strip — clip actions are in clip-mode row */}
 
           {/* ── Bottom tab bar ── */}
           <nav className="mnav__tabs">

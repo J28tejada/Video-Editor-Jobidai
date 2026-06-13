@@ -101,6 +101,16 @@ export function Timeline() {
   // fighting the user's finger mid-scroll.
   const userScrollingRef = useRef(false);
 
+  // Scrub throttle: the browser scrolls the timeline natively at 60fps (free),
+  // but each playhead update forces a video-frame decode in Preview. Decoding
+  // on every scroll event floods the decoder on mobile and crashes the tab, so
+  // we cap actual seeks to ~20Hz on mobile (leading + trailing edge).
+  const scrubMinInterval = useRef(
+    typeof window !== 'undefined' && window.innerWidth <= 760 ? 50 : 16,
+  ).current;
+  const lastSeekTsRef = useRef(0);
+  const trailingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [halfWidth, setHalfWidth] = useState(() =>
     typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 300,
   );
@@ -122,20 +132,40 @@ export function Timeline() {
     el.scrollLeft = playhead * PPS;
   }, [playhead]);
 
-  // User scrolls (touch or mouse wheel) → update playhead.
-  // Skip if scroll position already matches our playhead (programmatic scroll).
-  const handleScroll = useCallback(() => {
+  // Read the current scroll position and push it to the playhead (the costly
+  // decode happens downstream in Preview). Bails if already on target.
+  const flushSeek = useCallback(() => {
+    lastSeekTsRef.current = performance.now();
     const el = trackRef.current;
     if (!el) return;
-    if (Math.round(el.scrollLeft) === Math.round(playheadRef.current * PPS)) return;
+    const t = Math.max(0, Math.min(duration, el.scrollLeft / PPS));
+    if (Math.abs(t - playheadRef.current) > 0.0005) seek(t);
+  }, [duration, seek]);
+
+  // User scrolls (touch, wheel, or mouse-drag) → throttled playhead update.
+  const handleScroll = useCallback(() => {
     userScrollingRef.current = true;
-    seek(Math.max(0, Math.min(duration, el.scrollLeft / PPS)));
+
+    // Detect scroll-end: land precisely and commit the gesture.
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
     scrollEndTimerRef.current = setTimeout(() => {
       userScrollingRef.current = false;
+      flushSeek();
       endGesture();
-    }, 200);
-  }, [seek, duration, endGesture]);
+    }, 140);
+
+    // Throttle: leading edge if enough time passed, otherwise schedule a single
+    // trailing call so the very latest position is never dropped.
+    const since = performance.now() - lastSeekTsRef.current;
+    if (since >= scrubMinInterval) {
+      flushSeek();
+    } else if (!trailingTimerRef.current) {
+      trailingTimerRef.current = setTimeout(() => {
+        trailingTimerRef.current = null;
+        flushSeek();
+      }, scrubMinInterval - since);
+    }
+  }, [flushSeek, endGesture, scrubMinInterval]);
 
   // Desktop: convert mouse pointer drag to scroll (touch devices use native scroll).
   const dragRef = useRef<{ startX: number; startScroll: number } | null>(null);

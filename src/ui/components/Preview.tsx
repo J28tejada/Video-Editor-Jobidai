@@ -18,9 +18,7 @@ import {
   renderTimelineFrame,
   renderTimelineBase,
 } from '../../core/compositor/renderFrame';
-import { drawBaseClip } from '../../core/compositor/renderFrame';
 import { drawActiveOverlays } from '../../core/compositor/overlays';
-import { isStreamable, streamBaseFrames } from '../../core/compositor/streamPlayer';
 import { getCachedTimelineAudio, isTimelineAudioReady } from '../../core/media/audioTimeline';
 import { waitForAudioContext } from '../../lib/audioContext';
 import { PreviewTransformBox } from './PreviewTransformBox';
@@ -123,67 +121,6 @@ export function Preview() {
       }
       const now = () => startPlayhead + Math.max(0, elapsed());
 
-      // Display loop seeks (React state) throttled to ~15fps on mobile to avoid
-      // 60 re-renders/sec of Timeline & other consumers; canvas stays at 60fps.
-      let lastSeekT = -Infinity;
-      const seekHz = mobile ? 15 : 60;
-      const seekThresh = 1 / seekHz;
-
-      // ── Streaming path: forward decode via CanvasSink iterator (smoothest) ──
-      // Used for simple projects (single base track, normal speed, no
-      // transitions / overlay tracks / bg-removal). Decodes every packet once.
-      if (isStreamable(projectRef.current)) {
-        const playScale = mobile ? 0.4 : 1;
-        // Pooled canvases are reused by the iterator, so copy the latest frame
-        // into a stable canvas the display loop can read at any time.
-        const hold = document.createElement('canvas');
-        const holdCtx = hold.getContext('2d', { alpha: false });
-        let holdClip: Parameters<typeof drawBaseClip>[2] | null = null;
-        let hasFrame = false;
-
-        // Producer: pull decoded frames, paced to the master clock.
-        (async () => {
-          try {
-            for await (const f of streamBaseFrames(
-              projectRef.current, startPlayhead, playScale, () => cancelled,
-            )) {
-              if (cancelled) return;
-              // Don't run ahead of the clock: wait until it is (nearly) time.
-              while (!cancelled && now() < f.timelineTime - 0.004) {
-                await new Promise((r) => requestAnimationFrame(() => r(null)));
-              }
-              if (cancelled) return;
-              // Drop badly-late frames so video can catch back up to audio.
-              if (now() - f.timelineTime > 0.25) continue;
-              if (holdCtx) {
-                if (hold.width !== f.canvas.width || hold.height !== f.canvas.height) {
-                  hold.width = f.canvas.width;
-                  hold.height = f.canvas.height;
-                }
-                holdCtx.drawImage(f.canvas, 0, 0);
-                holdClip = f.clip;
-                hasFrame = true;
-              }
-            }
-          } catch {
-            // Stop producing on error; display loop keeps the last frame.
-          }
-        })();
-
-        const draw = () => {
-          if (cancelled) return;
-          const t = now();
-          if (t >= duration) { seek(duration); pause(); return; }
-          if (hasFrame && holdClip) drawBaseClip(visible, hold, holdClip);
-          drawActiveOverlays(visible, projectRef.current, t);
-          if (t - lastSeekT >= seekThresh) { seek(t); lastSeekT = t; }
-          raf = requestAnimationFrame(draw);
-        };
-        raf = requestAnimationFrame(draw);
-        return;
-      }
-
-      // ── Legacy path: per-frame compositor (transitions, overlays, images) ──
       // Prime the first base frame so there is no black flash on start.
       await renderTimelineBase(base, projectRef.current, now());
       if (cancelled) return;
@@ -203,6 +140,12 @@ export function Preview() {
           await renderTimelineBase(base, projectRef.current, t);
         }
       })();
+
+      // Display loop: canvas at 60fps, but React state (seek) throttled to
+      // ~15fps on mobile to avoid 60 re-renders/sec of Timeline & other consumers.
+      let lastSeekT = -Infinity;
+      const seekHz = mobile ? 15 : 60;
+      const seekThresh = 1 / seekHz;
 
       const draw = () => {
         if (cancelled) return;

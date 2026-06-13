@@ -164,7 +164,7 @@ async function drawBaseClipCutout(
 }
 
 /** Draw a base-track clip with its background fill (black / blur / color). */
-export function drawBaseClip(
+function drawBaseClip(
   compositor: Compositor,
   frame: CanvasImageSource | null,
   clip: Clip,

@@ -55,7 +55,7 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 
   const {
     isPlaying, togglePlay, duration, playhead,
-    split, removeSelected, selectedClipId,
+    split, removeSelected, selectedClipId, select,
     addText, importMusic, addSfx, importSfx, importFiles,
     undo, redo, canUndo, canRedo,
     project,
@@ -138,7 +138,7 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
           {/* Back button → returns to normal tabs */}
           <button
             className="mnav__back"
-            onClick={() => { setClipMode(false); setSection(null); }}
+            onClick={() => select(null)}
             title="Volver"
           >
             <ChevronLeft size={20} />

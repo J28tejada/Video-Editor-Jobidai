@@ -924,6 +924,36 @@ input[type='color'] {
   .mnav__play:disabled { opacity: 0.35; }
   .mnav__play--pause { background: rgba(255,255,255,0.12); color: var(--text); box-shadow: none; }
 
+  /* Clip mode row — replaces tabs when a clip is selected */
+  .mnav__clip-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-top: 1px solid var(--border);
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .mnav__clip-row::-webkit-scrollbar { display: none; }
+
+  .mnav__back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .mnav__back:hover { background: rgba(255,255,255,0.16); }
+
   /* Tool strip */
   .mnav__tools {
     display: flex;

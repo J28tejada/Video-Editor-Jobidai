@@ -1,13 +1,18 @@
 /**
  * Mobile-only bottom navigation + transport controls (CapCut style).
  * Hidden on desktop via CSS. Replaces the desktop Toolbar for touch devices.
+ *
+ * Layout:
+ *  - Default: [transport] + [tabs]
+ *  - Clip selected: [transport] + [clip-row: ← back | Cortar | Borrar | sections…]
+ *    The clip-row replaces the tabs, saving one full row of screen space.
  */
 import { useRef, useState, useEffect } from 'react';
 import {
   Scissors, Music, Type, Sparkles, Download,
   Undo2, Redo2, Play, Pause, Plus,
   Trash2, Volume2, FolderOpen, X,
-  Gauge, Palette, LayoutTemplate, Mic,
+  Gauge, Palette, LayoutTemplate, Mic, ChevronLeft,
 } from 'lucide-react';
 import { useEditor } from '../../state/EditorContext';
 import { useClipSection, type ClipSection } from '../../state/ClipSectionContext';
@@ -19,26 +24,28 @@ import { QUALITY_HIGH, type VideoCodec } from 'mediabunny';
 type Tab = 'edit' | 'audio' | 'text' | 'effects' | 'export';
 
 const TABS: { id: Tab; icon: React.ReactNode; label: string }[] = [
-  { id: 'edit',    icon: <Scissors size={20} />,  label: 'Editar' },
-  { id: 'audio',   icon: <Music size={20} />,      label: 'Audio' },
-  { id: 'text',    icon: <Type size={20} />,        label: 'Texto' },
-  { id: 'effects', icon: <Sparkles size={20} />,   label: 'Efectos' },
-  { id: 'export',  icon: <Download size={20} />,   label: 'Exportar' },
+  { id: 'edit',    icon: <Scissors size={20} />, label: 'Editar' },
+  { id: 'audio',   icon: <Music size={20} />,    label: 'Audio' },
+  { id: 'text',    icon: <Type size={20} />,      label: 'Texto' },
+  { id: 'effects', icon: <Sparkles size={20} />, label: 'Efectos' },
+  { id: 'export',  icon: <Download size={20} />, label: 'Exportar' },
 ];
 
-// Clip section definitions shown when a clip is selected
 const CLIP_SECTIONS: { id: ClipSection; icon: React.ReactNode; label: string }[] = [
-  { id: 'removeBg', icon: <Scissors size={18} />, label: 'Fondo IA' },
-  { id: 'speed',    icon: <Gauge size={18} />,    label: 'Velocidad' },
-  { id: 'color',    icon: <Palette size={18} />,  label: 'Color' },
+  { id: 'removeBg', icon: <Scissors size={18} />,      label: 'Fondo IA' },
+  { id: 'speed',    icon: <Gauge size={18} />,          label: 'Velocidad' },
+  { id: 'color',    icon: <Palette size={18} />,        label: 'Color' },
   { id: 'frame',    icon: <LayoutTemplate size={18} />, label: 'Encuadre' },
-  { id: 'audio',    icon: <Mic size={18} />,      label: 'Audio' },
+  { id: 'audio',    icon: <Mic size={18} />,            label: 'Audio' },
 ];
 
 export function MobileNav({ codec }: { codec: VideoCodec | null }) {
   const [activeTab, setActiveTab] = useState<Tab>('edit');
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  // Whether the clip-row is shown (true when a clip is selected)
+  const [clipMode, setClipMode] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const musicRef = useRef<HTMLInputElement>(null);
   const sfxRef = useRef<HTMLInputElement>(null);
@@ -48,23 +55,25 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 
   const {
     isPlaying, togglePlay, duration, playhead,
-    split, removeSelected, selectedClipId, selectedOverlayId,
-    selectedMusicId, selectedSfxId, selectedTransitionId,
+    split, removeSelected, selectedClipId,
+    selectedOverlayId, selectedMusicId, selectedSfxId, selectedTransitionId,
     addText, importMusic, addSfx, importSfx, importFiles,
     undo, redo, canUndo, canRedo,
     project,
     removeSilences,
   } = useEditor();
 
-  // Reset section when clip is deselected
+  // Enter clip mode when a clip is selected; exit when deselected.
   useEffect(() => {
-    if (!selectedClipId) setSection(null);
+    if (selectedClipId) {
+      setClipMode(true);
+    } else {
+      setClipMode(false);
+      setSection(null);
+    }
   }, [selectedClipId, setSection]);
 
-  const handlePlay = () => {
-    unlockAudio();
-    togglePlay();
-  };
+  const handlePlay = () => { unlockAudio(); togglePlay(); };
 
   const handleExport = async () => {
     if (!codec) { alert('No hay codec disponible en este dispositivo.'); return; }
@@ -75,22 +84,17 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
     setExportProgress(0);
     try {
       const result = await exportProject(project, {
-        codec,
-        quality: QUALITY_HIGH,
-        signal: ctrl.signal,
-        onProgress: setExportProgress,
+        codec, quality: QUALITY_HIGH,
+        signal: ctrl.signal, onProgress: setExportProgress,
       });
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = result.fileName;
-      a.click();
+      a.href = url; a.download = result.fileName; a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
       if ((e as Error).name !== 'AbortError') alert(`Error: ${(e as Error).message}`);
     } finally {
-      setIsExporting(false);
-      abortRef.current = null;
+      setIsExporting(false); abortRef.current = null;
     }
   };
 
@@ -106,7 +110,8 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 
   return (
     <div className="mnav">
-      {/* ── Transport ── */}
+
+      {/* ── Transport: always visible ── */}
       <div className="mnav__transport">
         <button className="mnav__tbtn" onClick={undo} disabled={!canUndo} title="Deshacer">
           <Undo2 size={18} />
@@ -127,95 +132,107 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
         <button className="mnav__tbtn" onClick={redo} disabled={!canRedo} title="Rehacer">
           <Redo2 size={18} />
         </button>
-        <button
-          className="mnav__tbtn"
-          onClick={() => importRef.current?.click()}
-          title="Importar video/imagen"
-        >
+        <button className="mnav__tbtn" onClick={() => importRef.current?.click()} title="Importar">
           <Plus size={18} />
         </button>
       </div>
 
-      {/* ── Contextual tool strip ── */}
-      <div className="mnav__tools">
-        {/* When clip selected: show clip-section chips + edit actions */}
-        {selectedClipId && activeTab === 'edit' ? (
-          <>
-            <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
-            <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} />
-            <div className="mnav__sep" />
-            {CLIP_SECTIONS.map(({ id, icon, label }) => (
-              <MBtn
-                key={id}
-                icon={icon}
-                label={label}
-                onClick={() => setSection(section === id ? null : id)}
-                active={section === id}
-              />
-            ))}
-          </>
-        ) : activeTab === 'edit' ? (
-          <>
-            <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
-            <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} disabled={!anySelected} />
-          </>
-        ) : null}
-
-        {activeTab === 'audio' && (
-          <>
-            <MBtn icon={<Music size={20} />} label="Música" onClick={() => musicRef.current?.click()} />
-            {SYNTH_SFX.map((s) => (
-              <MBtn key={s.name} icon={<Volume2 size={20} />} label={s.label} onClick={() => addSfx(s.name, s.durationSec)} />
-            ))}
-            <MBtn icon={<FolderOpen size={20} />} label="SFX" onClick={() => sfxRef.current?.click()} />
-          </>
-        )}
-
-        {activeTab === 'text' && (
-          <MBtn icon={<Type size={20} />} label="Añadir texto" onClick={addText} />
-        )}
-
-        {activeTab === 'effects' && (
-          <MBtn
-            icon={<Scissors size={20} />}
-            label="Quitar silencios"
-            onClick={async () => {
-              try {
-                const r = await removeSilences({ thresholdDb: -40, minSilenceSec: 0.4, paddingSec: 0.08 });
-                if (r.removedCount === 0) alert('No se detectaron silencios.');
-                else alert(`${r.removedCount} corte(s), ${r.removedSec.toFixed(1)}s eliminados.`);
-              } catch (e) {
-                alert(`Error: ${(e as Error).message}`);
-              }
-            }}
-          />
-        )}
-
-        {activeTab === 'export' && (
-          isExporting ? (
-            <>
-              <span className="mnav__progress">{Math.round(exportProgress * 100)}%</span>
-              <MBtn icon={<X size={20} />} label="Cancelar" onClick={() => abortRef.current?.abort()} />
-            </>
-          ) : (
-            <MBtn icon={<Download size={20} />} label="Exportar MP4" onClick={handleExport} disabled={!codec} accent />
-          )
-        )}
-      </div>
-
-      {/* ── Bottom tab bar ── */}
-      <nav className="mnav__tabs">
-        {TABS.map(({ id, icon, label }) => (
+      {clipMode ? (
+        /* ── Clip mode: one scrollable row replaces tabs ── */
+        <div className="mnav__clip-row">
+          {/* Back button → returns to normal tabs */}
           <button
-            key={id}
-            className={`mnav__tab${activeTab === id ? ' mnav__tab--active' : ''}`}
-            onClick={() => setActiveTab(id)}
+            className="mnav__back"
+            onClick={() => { setClipMode(false); setSection(null); }}
+            title="Volver"
           >
-            <span className="mnav__tab-icon">{icon}</span>
-            <span className="mnav__tab-label">{label}</span>
+            <ChevronLeft size={20} />
           </button>
-        ))}
-      </nav>
+          <div className="mnav__sep" />
+          <MBtn icon={<Scissors size={18} />} label="Cortar" onClick={split} />
+          <MBtn icon={<Trash2 size={18} />} label="Borrar" onClick={removeSelected} />
+          <div className="mnav__sep" />
+          {CLIP_SECTIONS.map(({ id, icon, label }) => (
+            <MBtn
+              key={id}
+              icon={icon}
+              label={label}
+              onClick={() => setSection(section === id ? null : id)}
+              active={section === id}
+            />
+          ))}
+        </div>
+
+      ) : (
+        <>
+          {/* ── Contextual tool strip (non-edit tabs only) ── */}
+          {activeTab === 'audio' && (
+            <div className="mnav__tools">
+              <MBtn icon={<Music size={20} />} label="Música" onClick={() => musicRef.current?.click()} />
+              {SYNTH_SFX.map((s) => (
+                <MBtn key={s.name} icon={<Volume2 size={20} />} label={s.label} onClick={() => addSfx(s.name, s.durationSec)} />
+              ))}
+              <MBtn icon={<FolderOpen size={20} />} label="SFX" onClick={() => sfxRef.current?.click()} />
+            </div>
+          )}
+
+          {activeTab === 'text' && (
+            <div className="mnav__tools">
+              <MBtn icon={<Type size={20} />} label="Añadir texto" onClick={addText} />
+            </div>
+          )}
+
+          {activeTab === 'effects' && (
+            <div className="mnav__tools">
+              <MBtn
+                icon={<Scissors size={20} />}
+                label="Quitar silencios"
+                onClick={async () => {
+                  try {
+                    const r = await removeSilences({ thresholdDb: -40, minSilenceSec: 0.4, paddingSec: 0.08 });
+                    if (r.removedCount === 0) alert('No se detectaron silencios.');
+                    else alert(`${r.removedCount} corte(s), ${r.removedSec.toFixed(1)}s eliminados.`);
+                  } catch (e) { alert(`Error: ${(e as Error).message}`); }
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'export' && (
+            <div className="mnav__tools">
+              {isExporting ? (
+                <>
+                  <span className="mnav__progress">{Math.round(exportProgress * 100)}%</span>
+                  <MBtn icon={<X size={20} />} label="Cancelar" onClick={() => abortRef.current?.abort()} />
+                </>
+              ) : (
+                <MBtn icon={<Download size={20} />} label="Exportar MP4" onClick={handleExport} disabled={!codec} accent />
+              )}
+            </div>
+          )}
+
+          {activeTab === 'edit' && anySelected && (
+            <div className="mnav__tools">
+              <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
+              <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} disabled={!anySelected} />
+            </div>
+          )}
+
+          {/* ── Bottom tab bar ── */}
+          <nav className="mnav__tabs">
+            {TABS.map(({ id, icon, label }) => (
+              <button
+                key={id}
+                className={`mnav__tab${activeTab === id ? ' mnav__tab--active' : ''}`}
+                onClick={() => setActiveTab(id)}
+              >
+                <span className="mnav__tab-icon">{icon}</span>
+                <span className="mnav__tab-label">{label}</span>
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
 
       {/* Hidden file inputs */}
       <input ref={importRef} type="file" accept="video/*,image/*" hidden multiple

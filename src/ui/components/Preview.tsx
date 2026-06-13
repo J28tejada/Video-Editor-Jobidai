@@ -17,11 +17,35 @@ import { Canvas2DCompositor } from '../../core/compositor/canvas2d';
 import {
   renderTimelineFrame,
   renderTimelineBase,
+  drawBaseClip,
 } from '../../core/compositor/renderFrame';
 import { drawActiveOverlays } from '../../core/compositor/overlays';
 import { getCachedTimelineAudio, isTimelineAudioReady } from '../../core/media/audioTimeline';
 import { waitForAudioContext } from '../../lib/audioContext';
 import { PreviewTransformBox } from './PreviewTransformBox';
+import { primaryTrack } from '../../core/timeline/project';
+import { clipEnd, clipSourceTime, type Clip, type Project } from '../../core/timeline/types';
+import { getMedia } from '../../core/media/registry';
+
+/**
+ * Can this project use the native <video> playback path?
+ * Requires: no transitions, no video overlay tracks, no bg-removal,
+ * no variable speed curves. All base clips must be video files.
+ */
+function isVideoPlayable(project: Project): boolean {
+  if (project.transitions.length > 0) return false;
+  for (let i = 1; i < project.tracks.length; i++) {
+    if (project.tracks[i].clips.length > 0) return false;
+  }
+  const clips = primaryTrack(project).clips;
+  if (clips.length === 0) return false;
+  for (const c of clips) {
+    if (c.removeBg || c.speedKeyframes?.length) return false;
+    const m = getMedia(c.sourceId);
+    if (!m?.file || !m.videoTrack) return false;
+  }
+  return true;
+}
 
 export function Preview() {
   const { project, playhead, isPlaying, duration, seek, pause, status, setStatus } = useEditor();
@@ -83,6 +107,9 @@ export function Preview() {
     let audioCtx: AudioContext | null = null;
     let node: AudioBufferSourceNode | null = null;
     let raf = 0;
+    // Used by the native <video> path (null in the legacy path).
+    let videoEl: HTMLVideoElement | null = null;
+    const videoSrcUrls: string[] = [];
 
     (async () => {
       const startPlayhead = playheadRef.current;
@@ -121,6 +148,86 @@ export function Preview() {
       }
       const now = () => startPlayhead + Math.max(0, elapsed());
 
+      // React-state seek is throttled to limit re-renders (canvas stays 60fps).
+      let lastSeekT = -Infinity;
+      const seekHz = mobile ? 15 : 60;
+      const seekThresh = 1 / seekHz;
+
+      // ── Native <video> path (hardware decode — smoothest on mobile) ─────────
+      // Used when the project is simple enough: single base track, normal speed,
+      // no transitions, no video overlays, no bg-removal. The browser's hardware
+      // decoder plays the video; we blit each frame to the canvas with drawFrame().
+      // Audio is still driven by AudioContext (video element stays muted).
+      if (isVideoPlayable(proj0)) {
+        const clips = primaryTrack(proj0).clips;
+        let activeClip: Clip =
+          clips.find(c => startPlayhead >= c.startInTimeline && startPlayhead < clipEnd(c))
+          ?? clips[0];
+        const m0 = getMedia(activeClip.sourceId);
+        if (m0?.file) {
+          const srcUrl = URL.createObjectURL(m0.file);
+          videoSrcUrls.push(srcUrl);
+          videoEl = document.createElement('video');
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+          videoEl.preload = 'auto';
+          videoEl.playbackRate = activeClip.speed ?? 1;
+          videoEl.src = srcUrl;
+          videoEl.currentTime = clipSourceTime(activeClip, startPlayhead);
+          // Keep in DOM (off-screen) for iOS compatibility.
+          videoEl.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;';
+          document.body.appendChild(videoEl);
+
+          // Wait until enough data is buffered to start playing.
+          await new Promise<void>((resolve) => {
+            if ((videoEl!.readyState ?? 0) >= 2) { resolve(); return; }
+            videoEl!.addEventListener('canplay', () => resolve(), { once: true });
+          });
+          if (cancelled) return;
+
+          videoEl.play().catch(() => {});
+
+          const draw = () => {
+            if (cancelled) return;
+            const t = now();
+            if (t >= duration) { seek(duration); pause(); return; }
+
+            const next = clips.find(c => t >= c.startInTimeline && t < clipEnd(c));
+            if (!next) {
+              visible.drawFrame(null); // gap between clips
+            } else {
+              if (next.id !== activeClip.id) {
+                // Advance to the next clip.
+                const nm = getMedia(next.sourceId);
+                if (nm?.file) {
+                  if (next.sourceId !== activeClip.sourceId) {
+                    const nu = URL.createObjectURL(nm.file);
+                    videoSrcUrls.push(nu);
+                    videoEl!.src = nu;
+                  }
+                  videoEl!.currentTime = clipSourceTime(next, t);
+                  videoEl!.playbackRate = next.speed ?? 1;
+                  videoEl!.play().catch(() => {});
+                }
+                activeClip = next;
+              } else {
+                // Gentle drift correction: only correct if > 200ms off.
+                const exp = clipSourceTime(activeClip, t);
+                if (Math.abs(videoEl!.currentTime - exp) > 0.2) videoEl!.currentTime = exp;
+              }
+              drawBaseClip(visible, videoEl!, activeClip);
+            }
+
+            drawActiveOverlays(visible, projectRef.current, t);
+            if (t - lastSeekT >= seekThresh) { seek(t); lastSeekT = t; }
+            raf = requestAnimationFrame(draw);
+          };
+          raf = requestAnimationFrame(draw);
+          return; // skip legacy path
+        }
+      }
+
+      // ── Legacy canvas path (transitions, overlay video, bg-removal, images) ──
       // Prime the first base frame so there is no black flash on start.
       await renderTimelineBase(base, projectRef.current, now());
       if (cancelled) return;
@@ -132,7 +239,6 @@ export function Preview() {
           const t = now();
           if (t >= duration) break;
           if (Math.abs(t - lastDecoded) < frameInterval) {
-            // Caught up; wait one display frame before checking again.
             await new Promise((r) => requestAnimationFrame(() => r(null)));
             continue;
           }
@@ -140,12 +246,6 @@ export function Preview() {
           await renderTimelineBase(base, projectRef.current, t);
         }
       })();
-
-      // Display loop: canvas at 60fps, but React state (seek) throttled to
-      // ~15fps on mobile to avoid 60 re-renders/sec of Timeline & other consumers.
-      let lastSeekT = -Infinity;
-      const seekHz = mobile ? 15 : 60;
-      const seekThresh = 1 / seekHz;
 
       const draw = () => {
         if (cancelled) return;
@@ -169,11 +269,16 @@ export function Preview() {
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
-      try {
-        node?.stop();
-      } catch {
-        // already stopped
+      // Native <video> cleanup
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.src = '';
+        try { document.body.removeChild(videoEl); } catch { /* already removed */ }
+        videoEl = null;
       }
+      for (const u of videoSrcUrls) URL.revokeObjectURL(u);
+      videoSrcUrls.length = 0;
+      try { node?.stop(); } catch { /* already stopped */ }
       // Do not close audioCtx — it is a shared singleton.
       base.dispose();
     };

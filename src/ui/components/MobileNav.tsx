@@ -211,12 +211,7 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
             </div>
           )}
 
-          {activeTab === 'edit' && anySelected && (
-            <div className="mnav__tools">
-              <MBtn icon={<Scissors size={20} />} label="Cortar" onClick={split} />
-              <MBtn icon={<Trash2 size={20} />} label="Borrar" onClick={removeSelected} disabled={!anySelected} />
-            </div>
-          )}
+          {/* Edit tab has no tool strip — clip actions are in clip-mode row */}
 
           {/* ── Bottom tab bar ── */}
           <nav className="mnav__tabs">

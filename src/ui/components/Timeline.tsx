@@ -91,25 +91,14 @@ export function Timeline() {
   } = useEditor();
 
   const trackRef = useRef<HTMLDivElement>(null);
+  const timeDisplayRef = useRef<HTMLSpanElement>(null);
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Always-current playhead without stale closure
   const playheadRef = useRef(playhead);
   playheadRef.current = playhead;
 
-  // True while the user is actively scrolling — prevents the sync effect from
-  // fighting the user's finger mid-scroll.
+  // True while the user is actively scrolling the timeline.
   const userScrollingRef = useRef(false);
-
-  // Scrub throttle: the browser scrolls the timeline natively at 60fps (free),
-  // but each playhead update forces a video-frame decode in Preview. Decoding
-  // on every scroll event floods the decoder on mobile and crashes the tab, so
-  // we cap actual seeks to ~20Hz on mobile (leading + trailing edge).
-  const scrubMinInterval = useRef(
-    typeof window !== 'undefined' && window.innerWidth <= 760 ? 50 : 16,
-  ).current;
-  const lastSeekTsRef = useRef(0);
-  const trailingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [halfWidth, setHalfWidth] = useState(() =>
     typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 300,
@@ -123,8 +112,8 @@ export function Timeline() {
     return () => ro.disconnect();
   }, []);
 
-  // Sync scroll to playhead for external changes (playback, seek button).
-  // Skipped while the user is actively dragging/scrolling.
+  // Sync scroll when playhead changes externally (playback, seek button).
+  // Skipped while the user is actively dragging so we don't fight their finger.
   useEffect(() => {
     if (userScrollingRef.current) return;
     const el = trackRef.current;
@@ -132,42 +121,46 @@ export function Timeline() {
     el.scrollLeft = playhead * PPS;
   }, [playhead]);
 
-  // Read the current scroll position and push it to the playhead (the costly
-  // decode happens downstream in Preview). Bails if already on target.
+  // During scroll, update the time display directly in the DOM via rAF.
+  // This gives live time feedback without triggering seek() or any video decode.
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      if (userScrollingRef.current && timeDisplayRef.current && trackRef.current) {
+        timeDisplayRef.current.textContent = formatTime(
+          Math.max(0, trackRef.current.scrollLeft / PPS),
+        );
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Called once when scroll ends — ONE frame decode for the final position.
   const flushSeek = useCallback(() => {
-    lastSeekTsRef.current = performance.now();
     const el = trackRef.current;
     if (!el) return;
     const t = Math.max(0, Math.min(duration, el.scrollLeft / PPS));
     if (Math.abs(t - playheadRef.current) > 0.0005) seek(t);
   }, [duration, seek]);
 
-  // User scrolls (touch, wheel, or mouse-drag) → throttled playhead update.
+  // User scroll: mark scrolling, schedule a single seek+decode on end.
+  // Guard against programmatic scrollLeft updates (from playback) via position comparison.
   const handleScroll = useCallback(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    if (Math.round(el.scrollLeft) === Math.round(playheadRef.current * PPS)) return;
     userScrollingRef.current = true;
-
-    // Detect scroll-end: land precisely and commit the gesture.
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
     scrollEndTimerRef.current = setTimeout(() => {
       userScrollingRef.current = false;
       flushSeek();
       endGesture();
-    }, 140);
+    }, 150);
+  }, [flushSeek, endGesture]);
 
-    // Throttle: leading edge if enough time passed, otherwise schedule a single
-    // trailing call so the very latest position is never dropped.
-    const since = performance.now() - lastSeekTsRef.current;
-    if (since >= scrubMinInterval) {
-      flushSeek();
-    } else if (!trailingTimerRef.current) {
-      trailingTimerRef.current = setTimeout(() => {
-        trailingTimerRef.current = null;
-        flushSeek();
-      }, scrubMinInterval - since);
-    }
-  }, [flushSeek, endGesture, scrubMinInterval]);
-
-  // Desktop: convert mouse pointer drag to scroll (touch devices use native scroll).
+  // Desktop: convert mouse pointer drag to scroll (touch uses native scroll).
   const dragRef = useRef<{ startX: number; startScroll: number } | null>(null);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -195,7 +188,7 @@ export function Timeline() {
   return (
     <div className="timeline">
       <div className="timeline__meta">
-        <span>{formatTime(playhead)}</span>
+        <span ref={timeDisplayRef}>{formatTime(playhead)}</span>
         <span className="timeline__sep">/</span>
         <span>{formatTime(duration)}</span>
         <button className="timeline__addtrack toolbar__icon-label" onClick={addTrack}>

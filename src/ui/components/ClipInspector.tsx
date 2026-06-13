@@ -65,7 +65,12 @@ export function ClipInspector() {
   const bg = clip.bg ?? { type: 'black' as const };
   const setTf = (patch: Partial<typeof tf>) => setClipTransform(clip.id, patch);
 
-  // On mobile a specific section is active; on desktop section is null → show all.
+  // On mobile: only render when a section is explicitly selected via MobileNav.
+  // On desktop (section always null): show all sections in the sidebar.
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 760;
+  if (isMobile && section === null) return null;
+
+  // section === null only reaches here on desktop → show all sections
   const showAll = section === null;
 
   const removeBgSection = (

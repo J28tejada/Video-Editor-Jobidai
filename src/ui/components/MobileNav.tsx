@@ -10,7 +10,7 @@
 import { useRef, useState, useEffect } from 'react';
 import {
   Scissors, Music, Type, Sparkles, Download,
-  Undo2, Redo2, Play, Pause, Plus,
+  Undo2, Redo2, Play, Pause, Plus, SkipBack,
   Trash2, Volume2, FolderOpen, X,
   Gauge, Palette, LayoutTemplate, Mic, ChevronLeft,
 } from 'lucide-react';
@@ -58,7 +58,7 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
     split, removeSelected, selectedClipId, select,
     addText, importMusic, addSfx, importSfx, importFiles,
     undo, redo, canUndo, canRedo,
-    project,
+    project, seek,
     removeSilences,
   } = useEditor();
 
@@ -108,6 +108,9 @@ export function MobileNav({ codec }: { codec: VideoCodec | null }) {
 
       {/* ── Transport: always visible ── */}
       <div className="mnav__transport">
+        <button className="mnav__tbtn" onClick={() => seek(0)} title="Ir al inicio">
+          <SkipBack size={18} />
+        </button>
         <button className="mnav__tbtn" onClick={undo} disabled={!canUndo} title="Deshacer">
           <Undo2 size={18} />
         </button>

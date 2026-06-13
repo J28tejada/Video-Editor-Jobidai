@@ -621,6 +621,18 @@ input[type='color'] {
   background: var(--accent-2);
   box-shadow: 0 0 10px rgba(34, 211, 238, 0.9);
 }
+/* Large touch-friendly drag handle at the top of the playhead */
+.timeline__playhead-handle {
+  position: absolute;
+  top: -8px;
+  left: -20px;
+  width: 42px;
+  height: 28px;
+  pointer-events: auto;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 6;
+}
 
 /* ---- Inspector host (side column on desktop) ---- */
 .inspectors { display: flex; flex: none; }

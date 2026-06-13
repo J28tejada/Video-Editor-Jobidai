@@ -91,49 +91,48 @@ export function Timeline() {
   } = useEditor();
 
   const trackRef = useRef<HTMLDivElement>(null);
-  const contentWidth = GUTTER + Math.max(duration * PPS + 40, 600);
-  const scrubbingRef = useRef(false);
+  const programmaticScrollRef = useRef(false);
+  const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const seekFromClientX = useCallback(
-    (clientX: number) => {
-      const el = trackRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const x = clientX - rect.left + el.scrollLeft - GUTTER;
-      seek(Math.max(0, Math.min(duration, x / PPS)));
-    },
-    [seek, duration],
+  // Half the scroll container width — used to center the playhead via content padding.
+  const [halfWidth, setHalfWidth] = useState(() =>
+    typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 300,
   );
 
-  const handleScrollPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      // Ignore clicks on clip handles, lane controls, cut buttons — they manage their own drag
-      if (target.closest('.clip__handle, .lane__btn, .lane__head, .cut, .clip__reorder')) return;
-      // If clicking a clip body, let it select but also start scrubbing
-      scrubbingRef.current = true;
-      e.currentTarget.setPointerCapture(e.pointerId);
-      seekFromClientX(e.clientX);
-    },
-    [seekFromClientX],
-  );
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHalfWidth(Math.round(el.clientWidth / 2)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const handleScrollPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!scrubbingRef.current) return;
-      seekFromClientX(e.clientX);
-    },
-    [seekFromClientX],
-  );
+  // When playhead changes externally (playback, seek button), scroll so it stays centered.
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollLeft = playhead * PPS;
+    requestAnimationFrame(() => { programmaticScrollRef.current = false; });
+  }, [playhead]);
 
-  const handleScrollPointerUp = useCallback(() => {
-    if (!scrubbingRef.current) return;
-    scrubbingRef.current = false;
-    endGesture();
-  }, [endGesture]);
+  // User drags/scrolls the timeline → update playhead.
+  const handleScroll = useCallback(() => {
+    if (programmaticScrollRef.current) return;
+    const el = trackRef.current;
+    if (!el) return;
+    seek(Math.max(0, Math.min(duration, el.scrollLeft / PPS)));
+    if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
+    scrollEndTimerRef.current = setTimeout(() => { endGesture(); }, 200);
+  }, [seek, duration, endGesture]);
 
-  // Render overlay tracks on top, base at the bottom (matches visual stacking).
   const videoTracks = [...project.tracks].reverse();
+
+  // paddingLeft shifts t=0 to the visual center of the scroll container.
+  // paddingRight allows the end of the video to also scroll to center.
+  const paddingLeft = Math.max(0, halfWidth - GUTTER);
+  const paddingRight = halfWidth;
+  const contentWidth = GUTTER + Math.max(duration * PPS + 40, 600);
 
   return (
     <div className="timeline">
@@ -150,31 +149,28 @@ export function Timeline() {
         </span>
       </div>
 
-      <div
-        className="timeline__scroll"
-        ref={trackRef}
-        onPointerDown={handleScrollPointerDown}
-        onPointerMove={handleScrollPointerMove}
-        onPointerUp={handleScrollPointerUp}
-        onPointerCancel={handleScrollPointerUp}
-      >
-        <div className="timeline__lanes" style={{ width: contentWidth }}>
-          {videoTracks.map((track) => (
-            <TrackLane key={track.id} track={track} />
-          ))}
+      <div className="timeline__body">
+        {/* Playhead fixed at the visual center; the timeline scrolls under it */}
+        <div className="timeline__playhead-center" />
 
-          <TextLane overlays={project.overlays} />
-
-          {project.music.length > 0 && <MusicLane />}
-
-          {project.sfx.length > 0 && <SfxLane />}
-
-          {/* Playhead: the handle is a larger touch target for dragging */}
+        <div
+          className="timeline__scroll"
+          ref={trackRef}
+          onScroll={handleScroll}
+        >
           <div
-            className="timeline__playhead"
-            style={{ transform: `translateX(${GUTTER + playhead * PPS}px)` }}
+            className="timeline__lanes"
+            style={{ width: contentWidth, paddingLeft, paddingRight }}
           >
-            <div className="timeline__playhead-handle" />
+            {videoTracks.map((track) => (
+              <TrackLane key={track.id} track={track} />
+            ))}
+
+            <TextLane overlays={project.overlays} />
+
+            {project.music.length > 0 && <MusicLane />}
+
+            {project.sfx.length > 0 && <SfxLane />}
           </div>
         </div>
       </div>

@@ -87,21 +87,50 @@ export function Timeline() {
     duration,
     seek,
     addTrack,
+    endGesture,
   } = useEditor();
 
   const trackRef = useRef<HTMLDivElement>(null);
   const contentWidth = GUTTER + Math.max(duration * PPS + 40, 600);
+  const scrubbingRef = useRef(false);
 
-  const seekFromEvent = useCallback(
+  const seekFromClientX = useCallback(
     (clientX: number) => {
       const el = trackRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const x = clientX - rect.left + el.scrollLeft - GUTTER;
-      seek(Math.max(0, x / PPS));
+      seek(Math.max(0, Math.min(duration, x / PPS)));
     },
-    [seek],
+    [seek, duration],
   );
+
+  const handleScrollPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      // Ignore clicks on clip handles, lane controls, cut buttons — they manage their own drag
+      if (target.closest('.clip__handle, .lane__btn, .lane__head, .cut, .clip__reorder')) return;
+      // If clicking a clip body, let it select but also start scrubbing
+      scrubbingRef.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      seekFromClientX(e.clientX);
+    },
+    [seekFromClientX],
+  );
+
+  const handleScrollPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!scrubbingRef.current) return;
+      seekFromClientX(e.clientX);
+    },
+    [seekFromClientX],
+  );
+
+  const handleScrollPointerUp = useCallback(() => {
+    if (!scrubbingRef.current) return;
+    scrubbingRef.current = false;
+    endGesture();
+  }, [endGesture]);
 
   // Render overlay tracks on top, base at the bottom (matches visual stacking).
   const videoTracks = [...project.tracks].reverse();
@@ -124,7 +153,10 @@ export function Timeline() {
       <div
         className="timeline__scroll"
         ref={trackRef}
-        onPointerDown={(e) => seekFromEvent(e.clientX)}
+        onPointerDown={handleScrollPointerDown}
+        onPointerMove={handleScrollPointerMove}
+        onPointerUp={handleScrollPointerUp}
+        onPointerCancel={handleScrollPointerUp}
       >
         <div className="timeline__lanes" style={{ width: contentWidth }}>
           {videoTracks.map((track) => (
@@ -137,10 +169,13 @@ export function Timeline() {
 
           {project.sfx.length > 0 && <SfxLane />}
 
+          {/* Playhead: the handle is a larger touch target for dragging */}
           <div
             className="timeline__playhead"
             style={{ transform: `translateX(${GUTTER + playhead * PPS}px)` }}
-          />
+          >
+            <div className="timeline__playhead-handle" />
+          </div>
         </div>
       </div>
     </div>

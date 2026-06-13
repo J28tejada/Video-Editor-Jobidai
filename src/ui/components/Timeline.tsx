@@ -91,10 +91,16 @@ export function Timeline() {
   } = useEditor();
 
   const trackRef = useRef<HTMLDivElement>(null);
-  const programmaticScrollRef = useRef(false);
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Half the scroll container width — used to center the playhead via content padding.
+  // Always-current playhead without stale closure
+  const playheadRef = useRef(playhead);
+  playheadRef.current = playhead;
+
+  // True while the user is actively scrolling — prevents the sync effect from
+  // fighting the user's finger mid-scroll.
+  const userScrollingRef = useRef(false);
+
   const [halfWidth, setHalfWidth] = useState(() =>
     typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 300,
   );
@@ -107,29 +113,51 @@ export function Timeline() {
     return () => ro.disconnect();
   }, []);
 
-  // When playhead changes externally (playback, seek button), scroll so it stays centered.
+  // Sync scroll to playhead for external changes (playback, seek button).
+  // Skipped while the user is actively dragging/scrolling.
   useEffect(() => {
+    if (userScrollingRef.current) return;
     const el = trackRef.current;
     if (!el) return;
-    programmaticScrollRef.current = true;
     el.scrollLeft = playhead * PPS;
-    requestAnimationFrame(() => { programmaticScrollRef.current = false; });
   }, [playhead]);
 
-  // User drags/scrolls the timeline → update playhead.
+  // User scrolls (touch or mouse wheel) → update playhead.
+  // Skip if scroll position already matches our playhead (programmatic scroll).
   const handleScroll = useCallback(() => {
-    if (programmaticScrollRef.current) return;
     const el = trackRef.current;
     if (!el) return;
+    if (Math.round(el.scrollLeft) === Math.round(playheadRef.current * PPS)) return;
+    userScrollingRef.current = true;
     seek(Math.max(0, Math.min(duration, el.scrollLeft / PPS)));
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
-    scrollEndTimerRef.current = setTimeout(() => { endGesture(); }, 200);
+    scrollEndTimerRef.current = setTimeout(() => {
+      userScrollingRef.current = false;
+      endGesture();
+    }, 200);
   }, [seek, duration, endGesture]);
 
-  const videoTracks = [...project.tracks].reverse();
+  // Desktop: convert mouse pointer drag to scroll (touch devices use native scroll).
+  const dragRef = useRef<{ startX: number; startScroll: number } | null>(null);
 
-  // paddingLeft shifts t=0 to the visual center of the scroll container.
-  // paddingRight allows the end of the video to also scroll to center.
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
+    const target = e.target as HTMLElement;
+    if (target.closest('.clip, .lane__btn, .lane__head, .cut')) return;
+    dragRef.current = { startX: e.clientX, startScroll: trackRef.current?.scrollLeft ?? 0 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    const el = trackRef.current;
+    if (!el) return;
+    el.scrollLeft = dragRef.current.startScroll - (e.clientX - dragRef.current.startX);
+  }, []);
+
+  const handlePointerUp = useCallback(() => { dragRef.current = null; }, []);
+
+  const videoTracks = [...project.tracks].reverse();
   const paddingLeft = Math.max(0, halfWidth - GUTTER);
   const paddingRight = halfWidth;
   const contentWidth = GUTTER + Math.max(duration * PPS + 40, 600);
@@ -157,6 +185,10 @@ export function Timeline() {
           className="timeline__scroll"
           ref={trackRef}
           onScroll={handleScroll}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
           <div
             className="timeline__lanes"

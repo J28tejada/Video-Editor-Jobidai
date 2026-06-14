@@ -22,6 +22,7 @@ import {
 import { drawActiveOverlays } from '../../core/compositor/overlays';
 import { getCachedTimelineAudio, isTimelineAudioReady } from '../../core/media/audioTimeline';
 import { waitForAudioContext } from '../../lib/audioContext';
+import { beginLivePlayback, setLivePlaybackTime, endLivePlayback } from '../../lib/playbackClock';
 import { PreviewTransformBox } from './PreviewTransformBox';
 import { primaryTrack } from '../../core/timeline/project';
 import { clipEnd, clipSourceTime, type Clip, type Project } from '../../core/timeline/types';
@@ -112,6 +113,9 @@ export function Preview() {
     const videoSrcUrls: string[] = [];
 
     const startPlayhead = playheadRef.current;
+    // Drive the timeline scroll imperatively at full rAF rate (decoupled from
+    // the throttled React-state seek) so the timeline tracks the smooth video.
+    beginLivePlayback(startPlayhead);
 
     // React-state seek is throttled to limit re-renders (canvas stays 60fps).
     let lastSeekT = -Infinity;
@@ -194,7 +198,8 @@ export function Preview() {
         const draw = () => {
           if (cancelled) return;
           const t = now();
-          if (t >= duration) { seek(duration); pause(); return; }
+          if (t >= duration) { endLivePlayback(); seek(duration); pause(); return; }
+          setLivePlaybackTime(t);
 
           const next = clips.find(c => t >= c.startInTimeline && t < clipEnd(c));
           if (!next) {
@@ -254,10 +259,12 @@ export function Preview() {
         if (cancelled) return;
         const t = now();
         if (t >= duration) {
+          endLivePlayback();
           seek(duration);
           pause();
           return;
         }
+        setLivePlaybackTime(t);
         visible.drawFrame(base.canvas, { clear: true });
         drawActiveOverlays(visible, projectRef.current, t);
         if (t - lastSeekT >= seekThresh) {
@@ -271,6 +278,7 @@ export function Preview() {
 
     return () => {
       cancelled = true;
+      endLivePlayback();
       cancelAnimationFrame(raf);
       // Native <video> cleanup
       if (videoEl) {

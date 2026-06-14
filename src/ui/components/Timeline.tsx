@@ -21,6 +21,7 @@ import {
 import { getMedia } from '../../core/media/registry';
 import { getThumb, getCachedThumb } from '../../core/media/thumbnails';
 import { transitionAfterClip } from '../../core/timeline/project';
+import { isLivePlayback, getLivePlaybackTime } from '../../lib/playbackClock';
 
 type Thumb = { left: number; width: number; url: string };
 
@@ -112,24 +113,35 @@ export function Timeline() {
     return () => ro.disconnect();
   }, []);
 
-  // Sync scroll when playhead changes externally (playback, seek button).
-  // Skipped while the user is actively dragging so we don't fight their finger.
+  // Sync scroll when playhead changes externally (seek button, pause settle).
+  // Skipped while the user is dragging (don't fight their finger) and during
+  // live playback (the rAF loop below drives the scroll smoothly instead).
   useEffect(() => {
-    if (userScrollingRef.current) return;
+    if (userScrollingRef.current || isLivePlayback()) return;
     const el = trackRef.current;
     if (!el) return;
     el.scrollLeft = playhead * PPS;
   }, [playhead]);
 
-  // During scroll, update the time display directly in the DOM via rAF.
-  // This gives live time feedback without triggering seek() or any video decode.
+  // A permanent rAF loop drives the timeline imperatively:
+  //  - while the user scrolls: mirror scrollLeft into the time display;
+  //  - during playback: read the live playback clock and scroll the timeline
+  //    at the full display rate (60fps) so it tracks the smooth video instead
+  //    of the throttled React-state seek.
   useEffect(() => {
     let raf = 0;
     const tick = () => {
-      if (userScrollingRef.current && timeDisplayRef.current && trackRef.current) {
-        timeDisplayRef.current.textContent = formatTime(
-          Math.max(0, trackRef.current.scrollLeft / PPS),
-        );
+      const el = trackRef.current;
+      if (el) {
+        if (userScrollingRef.current) {
+          if (timeDisplayRef.current) {
+            timeDisplayRef.current.textContent = formatTime(Math.max(0, el.scrollLeft / PPS));
+          }
+        } else if (isLivePlayback()) {
+          const t = getLivePlaybackTime();
+          el.scrollLeft = t * PPS;
+          if (timeDisplayRef.current) timeDisplayRef.current.textContent = formatTime(t);
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -148,6 +160,9 @@ export function Timeline() {
   // User scroll: mark scrolling, schedule a single seek+decode on end.
   // Guard against programmatic scrollLeft updates (from playback) via position comparison.
   const handleScroll = useCallback(() => {
+    // During playback the scroll is driven programmatically by the rAF loop —
+    // ignore those events so they aren't mistaken for a user drag.
+    if (isLivePlayback()) return;
     const el = trackRef.current;
     if (!el) return;
     if (Math.round(el.scrollLeft) === Math.round(playheadRef.current * PPS)) return;

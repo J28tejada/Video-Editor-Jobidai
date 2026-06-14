@@ -262,10 +262,13 @@ function roundRect(
 }
 
 function intrinsicWidth(frame: FrameImage): number {
+  // videoWidth first: an <video>'s `.width` reflects the HTML attribute (0 by
+  // default), while `.videoWidth` is the decoded frame size. `||` (not `??`)
+  // so the 0-valued attribute falls through to the real dimension.
   const f = frame as { width?: number; videoWidth?: number };
-  return f.width ?? f.videoWidth ?? 0;
+  return f.videoWidth || f.width || 0;
 }
 function intrinsicHeight(frame: FrameImage): number {
   const f = frame as { height?: number; videoHeight?: number };
-  return f.height ?? f.videoHeight ?? 0;
+  return f.videoHeight || f.height || 0;
 }

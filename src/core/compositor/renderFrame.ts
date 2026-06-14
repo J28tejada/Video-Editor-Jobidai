@@ -24,8 +24,11 @@ import { renderGlTransition } from './glTransitions';
 import { segmentCutout } from '../ai/segmentation';
 
 const intrinsic = (f: CanvasImageSource): { w: number; h: number } => {
+  // videoWidth/Height first: a <video>'s `.width`/`.height` reflect the (0 by
+  // default) HTML attributes, not the decoded frame size. `||` lets the 0 fall
+  // through to the real dimension.
   const o = f as { width?: number; height?: number; videoWidth?: number; videoHeight?: number };
-  return { w: o.width ?? o.videoWidth ?? 0, h: o.height ?? o.videoHeight ?? 0 };
+  return { w: o.videoWidth || o.width || 0, h: o.videoHeight || o.height || 0 };
 };
 import { getMedia } from '../media/registry';
 import { drawActiveOverlays } from './overlays';

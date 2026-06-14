@@ -87,6 +87,7 @@ export function Timeline() {
     playhead,
     duration,
     seek,
+    pause,
     addTrack,
     endGesture,
   } = useEditor();
@@ -100,6 +101,9 @@ export function Timeline() {
 
   // True while the user is actively scrolling the timeline.
   const userScrollingRef = useRef(false);
+  // Counts pending programmatic scrollLeft assignments from the rAF loop so
+  // handleScroll can tell them apart from user-initiated scrolls.
+  const programmingScrollRef = useRef(0);
 
   const [halfWidth, setHalfWidth] = useState(() =>
     typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 300,
@@ -139,6 +143,7 @@ export function Timeline() {
           }
         } else if (isLivePlayback()) {
           const t = getLivePlaybackTime();
+          programmingScrollRef.current++;
           el.scrollLeft = t * PPS;
           if (timeDisplayRef.current) timeDisplayRef.current.textContent = formatTime(t);
         }
@@ -160,12 +165,24 @@ export function Timeline() {
   // User scroll: mark scrolling, schedule a single seek+decode on end.
   // Guard against programmatic scrollLeft updates (from playback) via position comparison.
   const handleScroll = useCallback(() => {
-    // During playback the scroll is driven programmatically by the rAF loop —
-    // ignore those events so they aren't mistaken for a user drag.
-    if (isLivePlayback()) return;
+    // Programmatic scroll from our rAF loop — consume the token and ignore.
+    if (programmingScrollRef.current > 0) {
+      programmingScrollRef.current--;
+      return;
+    }
     const el = trackRef.current;
     if (!el) return;
     if (Math.round(el.scrollLeft) === Math.round(playheadRef.current * PPS)) return;
+
+    // User scrolled while video is playing → pause and seek to the new position.
+    if (isLivePlayback()) {
+      const t = Math.max(0, Math.min(duration, el.scrollLeft / PPS));
+      pause();
+      seek(t);
+      endGesture();
+      return;
+    }
+
     userScrollingRef.current = true;
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
     scrollEndTimerRef.current = setTimeout(() => {
@@ -173,7 +190,7 @@ export function Timeline() {
       flushSeek();
       endGesture();
     }, 150);
-  }, [flushSeek, endGesture]);
+  }, [flushSeek, endGesture, duration, pause, seek]);
 
   // Desktop: convert mouse pointer drag to scroll (touch uses native scroll).
   const dragRef = useRef<{ startX: number; startScroll: number } | null>(null);

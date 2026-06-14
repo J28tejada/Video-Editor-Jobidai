@@ -21,7 +21,7 @@ import {
 import { getMedia } from '../../core/media/registry';
 import { getThumb, getCachedThumb } from '../../core/media/thumbnails';
 import { transitionAfterClip } from '../../core/timeline/project';
-import { isLivePlayback, getLivePlaybackTime } from '../../lib/playbackClock';
+import { isLivePlayback, getLivePlaybackTime, endLivePlayback } from '../../lib/playbackClock';
 
 type Thumb = { left: number; width: number; url: string };
 
@@ -101,9 +101,6 @@ export function Timeline() {
 
   // True while the user is actively scrolling the timeline.
   const userScrollingRef = useRef(false);
-  // Counts pending programmatic scrollLeft assignments from the rAF loop so
-  // handleScroll can tell them apart from user-initiated scrolls.
-  const programmingScrollRef = useRef(0);
 
   const [halfWidth, setHalfWidth] = useState(() =>
     typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 300,
@@ -129,24 +126,31 @@ export function Timeline() {
 
   // A permanent rAF loop drives the timeline imperatively:
   //  - while the user scrolls: mirror scrollLeft into the time display;
-  //  - during playback: read the live playback clock and scroll the timeline
-  //    at the full display rate (60fps) so it tracks the smooth video instead
-  //    of the throttled React-state seek.
+  //  - during playback: scroll at 60fps from the live clock (no React re-render);
+  //  - when playback just ended: snap one final scroll to the exact playhead.
   useEffect(() => {
     let raf = 0;
+    let wasLive = false;
     const tick = () => {
       const el = trackRef.current;
       if (el) {
+        const live = isLivePlayback();
         if (userScrollingRef.current) {
           if (timeDisplayRef.current) {
             timeDisplayRef.current.textContent = formatTime(Math.max(0, el.scrollLeft / PPS));
           }
-        } else if (isLivePlayback()) {
+        } else if (live) {
           const t = getLivePlaybackTime();
-          programmingScrollRef.current++;
+          el.scrollLeft = t * PPS;
+          if (timeDisplayRef.current) timeDisplayRef.current.textContent = formatTime(t);
+        } else if (wasLive) {
+          // Playback just ended — snap to the exact final playhead so the
+          // end-of-clip lands precisely on the center marker.
+          const t = playheadRef.current;
           el.scrollLeft = t * PPS;
           if (timeDisplayRef.current) timeDisplayRef.current.textContent = formatTime(t);
         }
+        wasLive = live;
       }
       raf = requestAnimationFrame(tick);
     };
@@ -163,26 +167,14 @@ export function Timeline() {
   }, [duration, seek]);
 
   // User scroll: mark scrolling, schedule a single seek+decode on end.
-  // Guard against programmatic scrollLeft updates (from playback) via position comparison.
+  // During live playback, all scroll events are programmatic (from our rAF
+  // loop) — ignore them. User touch is handled in onPointerDown below, which
+  // calls endLivePlayback()+pause() synchronously BEFORE any scroll fires.
   const handleScroll = useCallback(() => {
-    // Programmatic scroll from our rAF loop — consume the token and ignore.
-    if (programmingScrollRef.current > 0) {
-      programmingScrollRef.current--;
-      return;
-    }
+    if (isLivePlayback()) return;
     const el = trackRef.current;
     if (!el) return;
     if (Math.round(el.scrollLeft) === Math.round(playheadRef.current * PPS)) return;
-
-    // User scrolled while video is playing → pause and seek to the new position.
-    if (isLivePlayback()) {
-      const t = Math.max(0, Math.min(duration, el.scrollLeft / PPS));
-      pause();
-      seek(t);
-      endGesture();
-      return;
-    }
-
     userScrollingRef.current = true;
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
     scrollEndTimerRef.current = setTimeout(() => {
@@ -190,18 +182,25 @@ export function Timeline() {
       flushSeek();
       endGesture();
     }, 150);
-  }, [flushSeek, endGesture, duration, pause, seek]);
+  }, [flushSeek, endGesture]);
 
   // Desktop: convert mouse pointer drag to scroll (touch uses native scroll).
   const dragRef = useRef<{ startX: number; startScroll: number } | null>(null);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // If the user touches/clicks during playback, stop the live clock
+    // synchronously right here — before any scroll event fires — so that
+    // handleScroll sees isLivePlayback()=false and treats the drag as a scrub.
+    if (isLivePlayback()) {
+      endLivePlayback();
+      pause();
+    }
     if (e.pointerType === 'touch') return;
     const target = e.target as HTMLElement;
     if (target.closest('.clip, .lane__btn, .lane__head, .cut')) return;
     dragRef.current = { startX: e.clientX, startScroll: trackRef.current?.scrollLeft ?? 0 };
     e.currentTarget.setPointerCapture(e.pointerId);
-  }, []);
+  }, [pause]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) return;

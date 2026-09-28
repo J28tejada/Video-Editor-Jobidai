@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Editor de Video",
+    "slug": "editor-de-video",
+    "scheme": "editordevideo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b0d12",
+    "ios": {
+      "bundleIdentifier": "ai.jobid.videoeditor",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "ai.jobid.videoeditor",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b0d12",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Necesitamos acceso a tus videos para importarlos al editor."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Necesitamos acceso a tu galería para importar y guardar videos.",
+          "savePhotosPermission": "Necesitamos permiso para guardar el video exportado en tu galería.",
+          "granularPermissions": [
+            "video"
+          ]
+        }
+      ],
+      "expo-sharing",
+      "expo-image",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -99,20 +99,25 @@ class VideoEngineModule : Module() {
       fun meta(key: Int) = retriever.extractMetadata(key)
       val durationMs = meta(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
         ?: throw MediaLoadException("no duration for $uri")
-      if (meta(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) != "yes") {
-        throw MediaLoadException("no video track in $uri")
+      val hasVideo = meta(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
+      val hasAudio = meta(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+      if (!hasVideo && !hasAudio) throw MediaLoadException("no audio or video in $uri")
+      var width = 0
+      var height = 0
+      if (hasVideo) {
+        width = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+        height = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+        val rotation = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        if (rotation == 90 || rotation == 270) width = height.also { height = width }
       }
-      var width = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
-      var height = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-      val rotation = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-      if (rotation == 90 || rotation == 270) width = height.also { height = width }
-      val (fps, codec) = videoFormat(uri)
+      val (fps, codec) = trackFormat(uri, if (hasVideo) "video/" else "audio/")
       return mapOf(
         "durationSec" to durationMs / 1000.0,
+        "hasVideo" to hasVideo,
         "width" to width,
         "height" to height,
-        "fps" to fps,
-        "hasAudio" to (meta(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"),
+        "fps" to if (hasVideo) fps else null,
+        "hasAudio" to hasAudio,
         "codec" to codec,
       )
     } catch (e: MediaLoadException) {
@@ -124,15 +129,15 @@ class VideoEngineModule : Module() {
     }
   }
 
-  /** Frame rate and MIME of the first video track, when the container declares them. */
-  private fun videoFormat(uri: String): Pair<Double?, String?> {
+  /** Frame rate and MIME of the first track of a kind ("video/" / "audio/"). */
+  private fun trackFormat(uri: String, prefix: String): Pair<Double?, String?> {
     val extractor = MediaExtractor()
     return try {
       extractor.setDataSource(context, Uri.parse(uri), null)
       for (i in 0 until extractor.trackCount) {
         val format = extractor.getTrackFormat(i)
         val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-        if (!mime.startsWith("video/")) continue
+        if (!mime.startsWith(prefix)) continue
         val fps = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
           try {
             format.getInteger(MediaFormat.KEY_FRAME_RATE).toDouble()

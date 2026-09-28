@@ -31,7 +31,7 @@ compone y codifica con el hardware del teléfono.
 | **F1a Motor iOS** | Preview con AVPlayer sobre una composición (cortes, recortes, velocidad, volumen, contain/cover), seek coalescido, miniaturas, info de medios, exportación MP4 con textos quemados (Core Animation) y progreso | ✅ Escrito · ⚠️ sin compilar (requiere macOS/EAS) |
 | **F1b Motor Android** | Mismo contrato: playlist ExoPlayer con clips recortados, velocidad/volumen/encuadre por clip, miniaturas, exportación con Transformer (Presentation, ganancia, velocidad manteniendo tono, textos con OverlayEffect) | ✅ Hecho · compila contra Media3 1.11.1 |
 | **F2 UI** | Importar de galería, preview con proporción del proyecto, timeline estilo CapCut (playhead fijo, scroll a 60 fps con reloj extrapolado), miniaturas, cortar, borrar, recortar con asas, velocidad, volumen, encuadre, textos (arrastrables, tamaño, color, fondo, posición, duración), formato 9:16/1:1/4:5/16:9, deshacer/rehacer, autoguardado, exportar → galería / compartir | ✅ Hecho |
-| **F3 Audio** | Música de fondo con fades y ducking, efectos de sonido (el modelo ya los soporta; falta mezclarlos en el motor) | ⏭️ Siguiente |
+| **F3 Audio** | Música de fondo (volumen, entrada/salida gradual, bajar con la voz, repetir hasta el final) y efectos de sonido (7 sintetizados en el dispositivo como WAV + importados). JS calcula una envolvente de ganancia por capa (misma lógica que la web). iOS: pistas extra en la composición con rampas de volumen. Android: secuencias de audio en Transformer con un procesador de envolvente; en el preview, la mezcla se pre-renderiza y suena sincronizada con el video | ✅ Hecho · Android compila; iOS sin compilar |
 | **F4 Visual** | Filtros de color (Core Image / Media3 `RgbMatrix`), transiciones entre clips, overlays de video (PiP), zoom/pan por clip | Pendiente |
 | **F5 IA en el dispositivo** | Subtítulos automáticos (whisper.cpp / WhisperKit), quitar silencios, quitar fondo (Vision / ML Kit) | Pendiente |
 | **F6 Producción** | Íconos y splash propios, bundle id definitivo, EAS Build + Submit a App Store / Play Store, analítica y crash reporting | Pendiente |
@@ -51,3 +51,8 @@ El motor no se ha podido ejecutar en un teléfono real desde este entorno. Lo
 primero al instalar: importar 2–3 videos (vertical y horizontal), cortar,
 cambiar velocidad, añadir un texto y exportar; comprobar que el texto aparece
 en el momento correcto del MP4 exportado en ambos sistemas.
+
+Audio (F3): añadir una canción y un par de efectos; comprobar que la música
+entra/sale gradualmente, baja cuando hablan en el video, y que en Android el
+preview la toca sincronizada (la primera vez tarda un momento en prepararse la
+mezcla). Exportar y escuchar el MP4.

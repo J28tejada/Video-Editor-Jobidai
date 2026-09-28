@@ -11,6 +11,8 @@ export const colors = {
   clip: '#232838',
   clipSelected: '#f5c542',
   textClip: '#8b5cf6',
+  musicClip: '#0d9488',
+  sfxClip: '#d97706',
   danger: '#ef4444',
 };
 

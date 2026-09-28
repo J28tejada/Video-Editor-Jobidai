@@ -17,12 +17,15 @@ import androidx.media3.ui.PlayerView
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
+import kotlin.math.abs
 
 /**
  * Native preview: an ExoPlayer playlist of clipped media items, one per
  * timeline clip, decoded by the hardware codecs (MediaCodec). Speed, volume
- * and fit are applied per clip as playback moves between items. JS drives it
- * through the view ref (play / pause / seek) and receives time updates.
+ * and fit are applied per clip as playback moves between items. Music and
+ * sound effects play from a pre-mixed audio bed on a second player kept in
+ * sync with the timeline. JS drives it through the view ref (play / pause /
+ * seek) and receives time updates.
  */
 @UnstableApi
 class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
@@ -45,11 +48,18 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
   private var compositionJSON: String? = null
   private var released = false
 
+  // Audio bed (music + sound effects), rendered off the video path.
+  private val bedPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
+  private val bedRenderer = AudioBedRenderer(context)
+  private var bedKey: String? = null
+  private var bedLoaded = false
+
   private val handler = Handler(Looper.getMainLooper())
   private val ticker = object : Runnable {
     override fun run() {
       if (released) return
       emitTime()
+      syncBed(force = false)
       if (player.isPlaying) handler.postDelayed(this, 33)
     }
   }
@@ -65,11 +75,13 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         handler.removeCallbacks(ticker)
         if (isPlaying) handler.post(ticker) else emitTime()
+        syncBed(force = false)
       }
 
       override fun onPlaybackStateChanged(state: Int) {
         if (state == Player.STATE_ENDED) {
           player.playWhenReady = false
+          bedPlayer.playWhenReady = false
           onTimeUpdate(mapOf("time" to (spec?.duration ?: 0.0), "playing" to false))
           onEnded(mapOf<String, Any>())
         }
@@ -95,6 +107,7 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
     val resumeAt = currentTime()
     val wasPlaying = player.playWhenReady
     spec = next
+    updateBed(next)
     if (next.clips.isEmpty()) {
       player.clearMediaItems()
       onReady(mapOf("duration" to 0.0))
@@ -117,6 +130,38 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
     seekInternal(resumeAt.coerceAtMost((next.duration - 0.01).coerceAtLeast(0.0)), exact = true)
     player.playWhenReady = wasPlaying
     onReady(mapOf("duration" to next.duration))
+  }
+
+  /** Re-render the audio bed when the music / effects mix changes. */
+  private fun updateBed(next: EngineComposition) {
+    val key = "${next.audio.hashCode()}-${next.duration}"
+    if (key == bedKey) return
+    bedKey = key
+    bedLoaded = false
+    bedPlayer.clearMediaItems()
+    bedRenderer.render(next.audio, next.duration) { uri ->
+      if (released || bedKey != key) return@render
+      if (uri == null) return@render
+      bedPlayer.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
+      bedPlayer.prepare()
+      bedLoaded = true
+      syncBed(force = true)
+    }
+  }
+
+  /**
+   * Keep the bed at the timeline position and in the same play state. Small
+   * drift is tolerated; beyond 120 ms the bed is re-seeked. Follows the
+   * intent to play (not momentary buffering at clip boundaries) so music
+   * doesn't stutter between clips.
+   */
+  private fun syncBed(force: Boolean) {
+    if (!bedLoaded) return
+    val t = currentTime()
+    val playing = player.playWhenReady && player.playbackState != Player.STATE_ENDED
+    val drift = abs(bedPlayer.currentPosition / 1000.0 - t)
+    if (force || drift > 0.12) bedPlayer.seekTo((t * 1000).toLong())
+    if (bedPlayer.playWhenReady != playing) bedPlayer.playWhenReady = playing
   }
 
   /** Speed, volume and fit of the clip currently playing. */
@@ -142,12 +187,14 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
 
   fun pause() {
     player.playWhenReady = false
+    bedPlayer.playWhenReady = false
     emitTime()
   }
 
   fun seek(time: Double, exact: Boolean) {
     seekInternal(time, exact)
     emitTime()
+    syncBed(force = true)
   }
 
   private fun seekInternal(time: Double, exact: Boolean) {
@@ -179,6 +226,8 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
     if (released) return
     released = true
     handler.removeCallbacks(ticker)
+    bedRenderer.cancel()
+    bedPlayer.release()
     playerView.player = null
     player.release()
   }

@@ -27,12 +27,41 @@ struct EngineText: Decodable {
   let align: String
 }
 
+struct GainPoint: Decodable {
+  let t: Double
+  let gain: Double
+}
+
+struct EngineAudio: Decodable {
+  let id: String
+  let uri: String
+  let start: Double
+  let end: Double
+  let inPoint: Double
+  let outPoint: Double
+  let loop: Bool
+  let envelope: [GainPoint]
+}
+
 struct EngineComposition: Decodable {
   let width: Double
   let height: Double
   let fps: Double
   let clips: [EngineClip]
   let texts: [EngineText]
+  let audio: [EngineAudio]
+
+  enum CodingKeys: String, CodingKey { case width, height, fps, clips, texts, audio }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    width = try c.decode(Double.self, forKey: .width)
+    height = try c.decode(Double.self, forKey: .height)
+    fps = try c.decode(Double.self, forKey: .fps)
+    clips = try c.decode([EngineClip].self, forKey: .clips)
+    texts = try c.decodeIfPresent([EngineText].self, forKey: .texts) ?? []
+    audio = try c.decodeIfPresent([EngineAudio].self, forKey: .audio) ?? []
+  }
 
   static func decode(_ json: String) throws -> EngineComposition {
     guard let data = json.data(using: .utf8) else {

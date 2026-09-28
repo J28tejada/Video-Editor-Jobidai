@@ -41,16 +41,44 @@ export type EngineText = {
   align: 'left' | 'center' | 'right';
 };
 
+/** A point of a piecewise-linear gain envelope, on the timeline. */
+export type GainPoint = { t: number; gain: number };
+
+/**
+ * An extra audio layer mixed over the clips' own sound: background music or a
+ * sound effect. Fades, ducking and volume are all baked into `envelope` by the
+ * JS side, so both platforms apply exactly the same mix.
+ */
+export type EngineAudio = {
+  id: string;
+  /** file:// URI of the audio (or video) file. */
+  uri: string;
+  /** Timeline position where the layer starts, seconds. */
+  start: number;
+  /** Timeline position where it stops (never past the composition end). */
+  end: number;
+  /** Source range for one pass, seconds. */
+  inPoint: number;
+  outPoint: number;
+  /** Repeat the source range until `end`. */
+  loop: boolean;
+  /** Gain over time (0..1). Linear between points, held before/after. */
+  envelope: GainPoint[];
+};
+
 export type EngineComposition = {
   width: number;
   height: number;
   fps: number;
   clips: EngineClip[];
   texts: EngineText[];
+  audio: EngineAudio[];
 };
 
 export type MediaInfo = {
   durationSec: number;
+  /** False for audio-only files (music, sound effects). */
+  hasVideo: boolean;
   /** Display size (rotation already applied). */
   width: number;
   height: number;

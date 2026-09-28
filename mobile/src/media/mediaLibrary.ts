@@ -4,6 +4,7 @@
  * container path changes between installs/updates, so absolute URIs would go
  * stale.
  */
+import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -19,7 +20,7 @@ export function mediaUri(fileName: string): string {
   return new File(mediaDir(), fileName).uri;
 }
 
-export type ImportedMedia = { meta: SourceMeta; fileName: string };
+export type ImportedMedia = { meta: SourceMeta; fileName: string; hasAudio: boolean };
 
 /** Pick videos from the gallery and copy them into the app's storage. */
 export async function pickAndImportVideos(): Promise<ImportedMedia[]> {
@@ -36,33 +37,55 @@ export async function pickAndImportVideos(): Promise<ImportedMedia[]> {
   });
   if (result.canceled) return [];
 
-  const dir = mediaDir();
-  if (!dir.exists) dir.create({ intermediates: true });
-
   const imported: ImportedMedia[] = [];
   for (const asset of result.assets) {
-    const id = uid('src');
-    const ext = extensionOf(asset.fileName ?? asset.uri) ?? 'mp4';
-    const fileName = `${id}.${ext}`;
-    const dest = new File(dir, fileName);
-    await new File(asset.uri).copy(dest);
-
-    const info = await VideoEngine.getMediaInfoAsync(dest.uri);
-    imported.push({
-      fileName,
-      meta: {
-        id,
-        name: asset.fileName ?? fileName,
-        durationSec: info.durationSec,
-        width: info.width,
-        height: info.height,
-        fps: info.fps ?? null,
-        codec: info.codec ?? null,
-        kind: 'video',
-      },
-    });
+    const media = await importFile(asset.uri, asset.fileName ?? null);
+    if (media.meta.kind === 'video') imported.push(media);
   }
   return imported;
+}
+
+/** Pick an audio file (music or a sound effect) from the Files app. */
+export async function pickAndImportAudio(): Promise<ImportedMedia | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: ['audio/*'],
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+  if (result.canceled || result.assets.length === 0) return null;
+  const asset = result.assets[0];
+  const media = await importFile(asset.uri, asset.name);
+  if (media.meta.kind !== 'audio' && !media.hasAudio) {
+    throw new Error('El archivo no tiene audio.');
+  }
+  return media;
+}
+
+/** Copy a picked file into app storage and probe it with the engine. */
+async function importFile(uri: string, name: string | null): Promise<ImportedMedia> {
+  const dir = mediaDir();
+  if (!dir.exists) dir.create({ intermediates: true });
+  const id = uid('src');
+  const ext = extensionOf(name ?? uri) ?? 'mp4';
+  const fileName = `${id}.${ext}`;
+  const dest = new File(dir, fileName);
+  await new File(uri).copy(dest);
+
+  const info = await VideoEngine.getMediaInfoAsync(dest.uri);
+  return {
+    fileName,
+    hasAudio: info.hasAudio,
+    meta: {
+      id,
+      name: name ?? fileName,
+      durationSec: info.durationSec,
+      width: info.width,
+      height: info.height,
+      fps: info.fps ?? null,
+      codec: info.codec ?? null,
+      kind: info.hasVideo ? 'video' : 'audio',
+    },
+  };
 }
 
 /** Delete media files no longer referenced by the project. */

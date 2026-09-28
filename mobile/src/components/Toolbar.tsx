@@ -12,7 +12,16 @@ import type { SheetKind } from './EditSheets';
 type Tool = { icon: IconName; label: string; onPress: () => void; danger?: boolean };
 
 export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
-  const { selection, select, split, removeSelected, addText, importVideos, duration } = useEditor();
+  const {
+    selection,
+    select,
+    split,
+    removeSelected,
+    addText,
+    importVideos,
+    duration,
+    moveSelectedToPlayhead,
+  } = useEditor();
 
   const importTool: Tool = {
     icon: 'import',
@@ -28,6 +37,14 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
       { icon: 'speed', label: 'Velocidad', onPress: () => openSheet('speed') },
       { icon: 'volume', label: 'Volumen', onPress: () => openSheet('volume') },
       { icon: 'fit', label: 'Encuadre', onPress: () => openSheet('fit') },
+      { icon: 'delete', label: 'Borrar', onPress: removeSelected, danger: true },
+      { icon: 'close', label: 'Cerrar', onPress: () => select(null) },
+    ];
+  } else if (selection?.kind === 'music' || selection?.kind === 'sfx') {
+    const sheet = selection.kind;
+    tools = [
+      { icon: 'edit', label: 'Editar', onPress: () => openSheet(sheet) },
+      { icon: 'toPlayhead', label: 'Al cursor', onPress: moveSelectedToPlayhead },
       { icon: 'delete', label: 'Borrar', onPress: removeSelected, danger: true },
       { icon: 'close', label: 'Cerrar', onPress: () => select(null) },
     ];
@@ -48,6 +65,13 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
           if (duration <= 0) return;
           addText();
           openSheet('text');
+        },
+      },
+      {
+        icon: 'music',
+        label: 'Audio',
+        onPress: () => {
+          if (duration > 0) openSheet('audio');
         },
       },
       { icon: 'format', label: 'Formato', onPress: () => openSheet('format') },

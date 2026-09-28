@@ -5,9 +5,12 @@
 import { primaryTrack } from '@timeline/project';
 import { clipDuration, clipGain, clipSpeed, type Project } from '@timeline/types';
 import type { EngineComposition } from '../../modules/video-engine';
+import { synthUri } from '../media/synthSfx';
+import { toEngineAudio } from './audioMix';
 
 /**
- * Builds the engine description for the base track and text overlays.
+ * Builds the engine description for the base track, text overlays and the
+ * music / sound-effect layers.
  * Clips whose media is missing are skipped (the timeline is re-packed so the
  * engine still sees contiguous clips).
  */
@@ -47,5 +50,6 @@ export function toEngineComposition(
       background: o.background,
       align: o.align,
     }));
-  return { width: project.width, height: project.height, fps: project.fps, clips, texts };
+  const audio = toEngineAudio(project, cursor, resolveUri, synthUri);
+  return { width: project.width, height: project.height, fps: project.fps, clips, texts, audio };
 }

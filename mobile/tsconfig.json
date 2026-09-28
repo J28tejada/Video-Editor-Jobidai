@@ -3,9 +3,21 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@timeline/*": ["../src/core/timeline/*"],
-      "@/*": ["./src/*"]
+      "@timeline/*": [
+        "../src/core/timeline/*"
+      ],
+      "@/*": [
+        "./src/*"
+      ],
+      "@audio/*": [
+        "../src/core/audio/*"
+      ]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }

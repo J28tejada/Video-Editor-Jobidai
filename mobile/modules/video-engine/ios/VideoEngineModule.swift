@@ -14,22 +14,30 @@ public class VideoEngineModule: Module {
       guard let url = URL(string: uri) else { throw MediaLoadException(uri) }
       let asset = AVURLAsset(url: url)
       let duration = try await asset.load(.duration).seconds
+      let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+      var info: [String: Any] = [
+        "durationSec": duration,
+        "hasAudio": !audioTracks.isEmpty,
+        "hasVideo": false,
+        "width": 0,
+        "height": 0,
+      ]
+      // Audio-only files (music, sound effects) are valid sources too.
       guard let video = try await asset.loadTracks(withMediaType: .video).first else {
-        throw MediaLoadException("no video track in \(url.lastPathComponent)")
+        if audioTracks.isEmpty { throw MediaLoadException("no audio or video in \(url.lastPathComponent)") }
+        if let format = try await audioTracks[0].load(.formatDescriptions).first {
+          info["codec"] = fourCC(CMFormatDescriptionGetMediaSubType(format))
+        }
+        return info
       }
       let natural = try await video.load(.naturalSize)
       let transform = try await video.load(.preferredTransform)
       let oriented = CGRect(origin: .zero, size: natural).applying(transform)
       let fps = try await video.load(.nominalFrameRate)
       let formats = try await video.load(.formatDescriptions)
-      let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-      let hasAudio = !audioTracks.isEmpty
-      var info: [String: Any] = [
-        "durationSec": duration,
-        "width": abs(oriented.width),
-        "height": abs(oriented.height),
-        "hasAudio": hasAudio,
-      ]
+      info["hasVideo"] = true
+      info["width"] = abs(oriented.width)
+      info["height"] = abs(oriented.height)
       if fps > 0 { info["fps"] = Double(fps) }
       if let format = formats.first {
         info["codec"] = fourCC(CMFormatDescriptionGetMediaSubType(format))

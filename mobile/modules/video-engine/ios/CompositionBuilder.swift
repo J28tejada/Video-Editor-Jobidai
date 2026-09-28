@@ -89,6 +89,8 @@ enum CompositionBuilder {
 
     if !hasAudio { composition.removeTrack(audioTrack) }
 
+    let layerParams = try await addAudioLayers(spec.audio, to: composition, videoEnd: cursor)
+
     // Instructions must tile the whole composition exactly; absorb rounding
     // drift in the last one.
     if let last = instructions.last, last.timeRange.end != composition.duration {
@@ -102,15 +104,99 @@ enum CompositionBuilder {
     videoComposition.instructions = instructions
 
     var audioMix: AVMutableAudioMix?
-    if hasAudio {
+    let allParams = (hasAudio ? [audioParams] : []) + layerParams
+    if !allParams.isEmpty {
       let mix = AVMutableAudioMix()
-      mix.inputParameters = [audioParams]
+      mix.inputParameters = allParams
       audioMix = mix
     }
 
     return BuiltComposition(
       asset: composition, videoComposition: videoComposition, audioMix: audioMix,
       duration: composition.duration.seconds)
+  }
+
+  /// Music and sound-effect layers. Layers that don't overlap in time share a
+  /// composition track (fewer tracks = fewer simultaneous decoders); each
+  /// layer's gain envelope becomes volume ramps on its track's mix parameters.
+  private static func addAudioLayers(
+    _ layers: [EngineAudio], to composition: AVMutableComposition, videoEnd: CMTime
+  ) async throws -> [AVMutableAudioMixInputParameters] {
+    var lanes: [(track: AVMutableCompositionTrack, params: AVMutableAudioMixInputParameters, busyUntil: CMTime)] = []
+
+    for layer in layers.sorted(by: { $0.start < $1.start }) {
+      let layerStart = CMTime(seconds: max(0, layer.start), preferredTimescale: timescale)
+      let layerEnd = CMTimeMinimum(CMTime(seconds: layer.end, preferredTimescale: timescale), videoEnd)
+      guard layerEnd > layerStart, let url = URL(string: layer.uri) else { continue }
+      let asset = AVURLAsset(url: url)
+      guard let source = try await asset.loadTracks(withMediaType: .audio).first else { continue }
+      let sourceDuration = try await asset.load(.duration)
+      let inTime = CMTime(seconds: max(0, layer.inPoint), preferredTimescale: timescale)
+      let outTime = CMTimeMinimum(
+        CMTime(seconds: layer.outPoint, preferredTimescale: timescale), sourceDuration)
+      guard outTime > inTime else { continue }
+
+      var laneIndex = lanes.firstIndex { $0.busyUntil <= layerStart }
+      if laneIndex == nil,
+        let track = composition.addMutableTrack(
+          withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+      {
+        lanes.append((track, AVMutableAudioMixInputParameters(track: track), .zero))
+        laneIndex = lanes.count - 1
+      }
+      guard let lane = laneIndex else { continue }
+
+      // One pass of the source range, repeated while looping, cut at the end.
+      var at = layerStart
+      while at < layerEnd {
+        let pass = CMTimeMinimum(outTime - inTime, layerEnd - at)
+        try lanes[lane].track.insertTimeRange(
+          CMTimeRange(start: inTime, duration: pass), of: source, at: at)
+        at = at + pass
+        if !layer.loop { break }
+      }
+      applyEnvelope(layer.envelope, to: lanes[lane].params, from: layerStart, to: at)
+      lanes[lane].busyUntil = at
+    }
+    return lanes.map { $0.params }
+  }
+
+  /// Piecewise-linear gain → a volume at the layer start plus one ramp per
+  /// envelope segment. AVAudioMix volumes are limited to 0...1.
+  private static func applyEnvelope(
+    _ points: [GainPoint], to params: AVMutableAudioMixInputParameters, from start: CMTime,
+    to end: CMTime
+  ) {
+    func volume(_ g: Double) -> Float { Float(min(max(g, 0), 1)) }
+    let s = start.seconds
+    let e = end.seconds
+    var prevT = s
+    var prevGain = gain(points, at: s)
+    params.setVolume(volume(prevGain), at: start)
+    let inner = points.filter { $0.t > s && $0.t < e }
+    for p in inner + [GainPoint(t: e, gain: gain(points, at: e))] where p.t > prevT {
+      params.setVolumeRamp(
+        fromStartVolume: volume(prevGain), toEndVolume: volume(p.gain),
+        timeRange: CMTimeRange(
+          start: CMTime(seconds: prevT, preferredTimescale: timescale),
+          end: CMTime(seconds: p.t, preferredTimescale: timescale)))
+      prevT = p.t
+      prevGain = p.gain
+    }
+  }
+
+  /// Linear interpolation over sorted points; holds the ends.
+  static func gain(_ points: [GainPoint], at t: Double) -> Double {
+    guard let first = points.first, let last = points.last else { return 1 }
+    if t <= first.t { return first.gain }
+    if t >= last.t { return last.gain }
+    for i in 1..<points.count where t <= points[i].t {
+      let a = points[i - 1]
+      let b = points[i]
+      let span = b.t - a.t
+      return span <= 0 ? b.gain : a.gain + (b.gain - a.gain) * (t - a.t) / span
+    }
+    return last.gain
   }
 
   /// Output size for the project, optionally scaled so its short side equals

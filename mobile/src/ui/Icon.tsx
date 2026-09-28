@@ -22,6 +22,9 @@ const ICONS = {
   edit: { ios: 'pencil', android: 'edit' },
   more: { ios: 'ellipsis', android: 'more_horiz' },
   start: { ios: 'backward.end.fill', android: 'skip_previous' },
+  music: { ios: 'music.note', android: 'music_note' },
+  sfx: { ios: 'waveform', android: 'graphic_eq' },
+  toPlayhead: { ios: 'arrow.right.to.line', android: 'keyboard_tab' },
 } as const;
 
 export type IconName = keyof typeof ICONS;

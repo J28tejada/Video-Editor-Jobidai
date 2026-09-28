@@ -23,7 +23,7 @@ import {
 } from 'react-native';
 
 import { primaryTrack } from '@timeline/project';
-import { clipDuration, clipSpeed, type Clip, type TextOverlay } from '@timeline/types';
+import { clipDuration, clipSpeed, type Clip, type Project, type TextOverlay } from '@timeline/types';
 import { useEditor } from '../editor/EditorContext';
 import { clockPlaying, clockTime } from '../engine/playbackClock';
 import { colors, formatTime, PPS, radius } from '../ui/theme';
@@ -31,6 +31,7 @@ import { useThumbnails } from './useThumbnails';
 
 const CLIP_H = 56;
 const TEXT_H = 28;
+const AUDIO_H = 24;
 const RULER_H = 20;
 const HANDLE_W = 14;
 const SCRUB_INTERVAL_MS = 50;
@@ -149,6 +150,7 @@ export function Timeline() {
               ))}
             </View>
             <TextLane overlays={project.overlays} />
+            <AudioLanes project={project} duration={duration} />
           </Pressable>
         </ScrollView>
       )}
@@ -287,8 +289,70 @@ function TextLane({ overlays }: { overlays: TextOverlay[] }) {
   );
 }
 
+/** Music and sound-effect lanes (shown only when the project has them). */
+function AudioLanes({ project, duration }: { project: Project; duration: number }) {
+  const { selection, select } = useEditor();
+  const block = (
+    kind: 'music' | 'sfx',
+    id: string,
+    start: number,
+    end: number,
+    label: string,
+    color: string,
+  ) => {
+    const selected = selection?.kind === kind && selection.id === id;
+    return (
+      <Pressable
+        key={id}
+        onPress={() => select(selected ? null : { kind, id })}
+        style={[
+          styles.audioBlock,
+          { left: start * PPS, width: Math.max(10, (end - start) * PPS), backgroundColor: color },
+          selected && styles.clipSelected,
+        ]}
+      >
+        <Text style={styles.textBlockLabel} numberOfLines={1}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  };
+  return (
+    <>
+      {project.music.length > 0 && (
+        <View style={styles.audioLane}>
+          {project.music.map((m) => {
+            const end = m.loop ? duration : Math.min(duration, m.startSec + (m.outPoint - m.inPoint));
+            const name = project.sources.find((s) => s.id === m.sourceId)?.name ?? 'Música';
+            return block('music', m.id, m.startSec, end, `♪ ${name}`, colors.musicClip);
+          })}
+        </View>
+      )}
+      {project.sfx.length > 0 && (
+        <View style={styles.audioLane}>
+          {project.sfx.map((s) => {
+            const name = s.synth ?? project.sources.find((x) => x.id === s.sourceId)?.name ?? 'SFX';
+            return block('sfx', s.id, s.startSec, s.startSec + s.durationSec, name, colors.sfxClip);
+          })}
+        </View>
+      )}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { height: RULER_H + CLIP_H + TEXT_H + 28, backgroundColor: colors.panel },
+  root: { backgroundColor: colors.panel, paddingBottom: 8 },
+  audioLane: { height: AUDIO_H, marginTop: 4 },
+  audioBlock: {
+    position: 'absolute',
+    top: 0,
+    height: AUDIO_H - 2,
+    borderRadius: radius.sm,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
   ruler: { height: RULER_H },
   tick: { position: 'absolute', top: 0, width: 1, height: 6, backgroundColor: colors.border },
   tickLabel: { position: 'absolute', top: 6, left: 3, fontSize: 9, color: colors.textDim },

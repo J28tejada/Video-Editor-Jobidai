@@ -31,7 +31,8 @@ import java.io.File
 /**
  * Renders an EngineComposition to MP4 with Media3 Transformer: one clipped,
  * speed-adjusted item per clip in a single sequence, scaled into the output
- * frame (contain/cover), per-clip gain, and text burned in with an overlay.
+ * frame (contain/cover), per-clip gain, text burned in with an overlay, and
+ * music / sound effects mixed in from extra audio sequences.
  * Must be used from the main thread (Transformer callbacks use its looper).
  */
 @UnstableApi
@@ -56,7 +57,9 @@ class Exporter(private val context: Context) {
     val sequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
       .addItems(items)
       .build()
-    val composition = Composition.Builder(sequence).build()
+    // Music / sound-effect layers are extra audio sequences mixed with the clips.
+    val audioSequences = AudioLayers.sequences(spec.audio, spec.duration)
+    val composition = Composition.Builder(listOf(sequence) + audioSequences).build()
 
     val progressHolder = ProgressHolder()
     val poll = object : Runnable {

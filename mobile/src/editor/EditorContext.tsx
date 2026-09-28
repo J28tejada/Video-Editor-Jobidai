@@ -18,12 +18,17 @@ import {
 } from 'react';
 
 import {
+  addMusic,
   addOverlay,
+  addSampleSfx,
+  addSynthSfx,
   appendClipFromSource,
   createProject,
   primaryTrack,
   removeClip,
+  removeMusic,
   removeOverlay,
+  removeSfx,
   setClipAudio,
   setClipFit,
   setClipSpeed,
@@ -31,16 +36,26 @@ import {
   splitAt,
   totalDuration,
   trimClip,
+  updateMusic,
   updateOverlay,
+  updateSfx,
 } from '@timeline/project';
-import type { Project, TextOverlay } from '@timeline/types';
+import { synthDuration } from '@audio/sfxList';
+import type { MusicItem, Project, SfxItem, TextOverlay } from '@timeline/types';
 import type { VideoEngineViewRef } from '../../modules/video-engine';
 import { toEngineComposition } from '../engine/composition';
 import { clockTime, syncClock } from '../engine/playbackClock';
-import { mediaUri, pickAndImportVideos, pruneMedia, type MediaFiles } from '../media/mediaLibrary';
+import {
+  mediaUri,
+  pickAndImportAudio,
+  pickAndImportVideos,
+  pruneMedia,
+  type ImportedMedia,
+  type MediaFiles,
+} from '../media/mediaLibrary';
 import { loadState, saveState } from './persistence';
 
-export type Selection = { kind: 'clip'; id: string } | { kind: 'text'; id: string } | null;
+export type Selection = { kind: 'clip' | 'text' | 'music' | 'sfx'; id: string } | null;
 
 type History = { past: Project[]; present: Project; future: Project[]; coalesceKey: string | null };
 
@@ -76,6 +91,15 @@ type EditorValue = {
   setFormat: (width: number, height: number) => void;
   newProject: () => void;
 
+  /** Returns false when the user cancelled the picker. */
+  importMusic: () => Promise<boolean>;
+  importSfx: () => Promise<boolean>;
+  addBuiltInSfx: (name: string) => void;
+  patchMusic: (id: string, patch: Partial<MusicItem>) => void;
+  patchSfx: (id: string, patch: Partial<SfxItem>) => void;
+  /** Move the selected music / effect so it starts at the playhead. */
+  moveSelectedToPlayhead: () => void;
+
   engineRef: RefObject<VideoEngineViewRef | null>;
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
@@ -110,7 +134,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       const saved = await loadState();
       if (saved) {
         // Drop media no clip references any more (history starts empty here).
-        const used = new Set(primaryTrack(saved.project).clips.map((c) => c.sourceId));
+        const used = new Set([
+          ...primaryTrack(saved.project).clips.map((c) => c.sourceId),
+          ...saved.project.music.map((m) => m.sourceId),
+          ...saved.project.sfx.flatMap((s) => (s.sourceId ? [s.sourceId] : [])),
+        ]);
         const kept: MediaFiles = {};
         for (const [id, file] of Object.entries(saved.media)) if (used.has(id)) kept[id] = file;
         pruneMedia(kept);
@@ -242,8 +270,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   const removeSelected = useCallback(() => {
     if (!selection) return;
-    if (selection.kind === 'clip') apply((p) => removeClip(p, selection.id));
-    else apply((p) => removeOverlay(p, selection.id));
+    const { kind, id } = selection;
+    apply((p) =>
+      kind === 'clip'
+        ? removeClip(p, id)
+        : kind === 'text'
+          ? removeOverlay(p, id)
+          : kind === 'music'
+            ? removeMusic(p, id)
+            : removeSfx(p, id),
+    );
     setSelection(null);
   }, [apply, selection]);
 
@@ -289,6 +325,65 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [apply],
   );
 
+  // ---- Music & sound effects ----
+
+  const registerMedia = useCallback((m: ImportedMedia) => {
+    setMedia((prev) => ({ ...prev, [m.meta.id]: m.fileName }));
+  }, []);
+
+  const importMusic = useCallback(async () => {
+    const m = await pickAndImportAudio();
+    if (!m) return false;
+    registerMedia(m);
+    // Music starts at 0 and loops under the whole video by default.
+    const created = addMusic(project, m.meta, 0);
+    const item = created.project.music.find((x) => x.id === created.id);
+    if (!item) return false;
+    apply((p) => ({ ...p, sources: withSource(p, m), music: [...p.music, item] }));
+    setSelection({ kind: 'music', id: item.id });
+    return true;
+  }, [apply, project, registerMedia]);
+
+  const importSfx = useCallback(async () => {
+    const m = await pickAndImportAudio();
+    if (!m) return false;
+    registerMedia(m);
+    const created = addSampleSfx(project, m.meta, clockTime());
+    const item = created.project.sfx.find((x) => x.id === created.id);
+    if (!item) return false;
+    apply((p) => ({ ...p, sources: withSource(p, m), sfx: [...p.sfx, item] }));
+    setSelection({ kind: 'sfx', id: item.id });
+    return true;
+  }, [apply, project, registerMedia]);
+
+  const addBuiltInSfx = useCallback(
+    (name: string) => {
+      const created = addSynthSfx(project, name, clockTime(), synthDuration(name));
+      const item = created.project.sfx.find((x) => x.id === created.id);
+      if (!item) return;
+      apply((p) => ({ ...p, sfx: [...p.sfx, item] }));
+      setSelection({ kind: 'sfx', id: item.id });
+    },
+    [apply, project],
+  );
+
+  const patchMusic = useCallback(
+    (id: string, patch: Partial<MusicItem>) => apply((p) => updateMusic(p, id, patch)),
+    [apply],
+  );
+
+  const patchSfx = useCallback(
+    (id: string, patch: Partial<SfxItem>) => apply((p) => updateSfx(p, id, patch)),
+    [apply],
+  );
+
+  const moveSelectedToPlayhead = useCallback(() => {
+    if (!selection) return;
+    const t = clockTime();
+    if (selection.kind === 'music') apply((p) => updateMusic(p, selection.id, { startSec: t }));
+    else if (selection.kind === 'sfx') apply((p) => updateSfx(p, selection.id, { startSec: t }));
+  }, [apply, selection]);
+
   const newProject = useCallback(() => {
     pause();
     setSelection(null);
@@ -321,6 +416,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     patchText,
     setFormat,
     newProject,
+    importMusic,
+    importSfx,
+    addBuiltInSfx,
+    patchMusic,
+    patchSfx,
+    moveSelectedToPlayhead,
     engineRef,
     isPlaying,
     setIsPlaying,
@@ -332,6 +433,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 }
+
+const withSource = (p: Project, m: ImportedMedia) =>
+  p.sources.some((s) => s.id === m.meta.id) ? p.sources : [...p.sources, m.meta];
 
 export function useEditor(): EditorValue {
   const ctx = useContext(EditorContext);

@@ -7,7 +7,17 @@ import { useEditor } from '../editor/EditorContext';
 import { colors, radius } from '../ui/theme';
 import { Chips, Label, Sheet } from './Sheet';
 
-export type SheetKind = 'speed' | 'volume' | 'fit' | 'text' | 'format' | 'export' | null;
+export type SheetKind =
+  | 'speed'
+  | 'volume'
+  | 'fit'
+  | 'text'
+  | 'format'
+  | 'export'
+  | 'audio'
+  | 'music'
+  | 'sfx'
+  | null;
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 const VOLUMES = [0, 0.25, 0.5, 0.75, 1];

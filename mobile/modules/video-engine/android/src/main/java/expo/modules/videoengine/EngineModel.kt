@@ -34,12 +34,42 @@ data class EngineText(
   val align: String,
 )
 
+data class GainPoint(val t: Double, val gain: Double)
+
+/** Music or sound-effect layer; fades/ducking/volume are baked into `envelope`. */
+data class EngineAudio(
+  val id: String,
+  val uri: String,
+  val start: Double,
+  val end: Double,
+  val inPoint: Double,
+  val outPoint: Double,
+  val loop: Boolean,
+  val envelope: List<GainPoint>,
+) {
+  /** Linear interpolation over the sorted points; holds the ends. */
+  fun gainAt(t: Double): Double {
+    if (envelope.isEmpty()) return 1.0
+    if (t <= envelope.first().t) return envelope.first().gain
+    for (i in 1 until envelope.size) {
+      val a = envelope[i - 1]
+      val b = envelope[i]
+      if (t <= b.t) {
+        val span = b.t - a.t
+        return if (span <= 0) b.gain else a.gain + (b.gain - a.gain) * (t - a.t) / span
+      }
+    }
+    return envelope.last().gain
+  }
+}
+
 data class EngineComposition(
   val width: Int,
   val height: Int,
   val fps: Double,
   val clips: List<EngineClip>,
   val texts: List<EngineText>,
+  val audio: List<EngineAudio>,
 ) {
   val duration: Double get() = clips.lastOrNull()?.end ?: 0.0
 
@@ -91,12 +121,32 @@ data class EngineComposition(
           )
         }
       } ?: emptyList()
+      val audio = o.optJSONArray("audio")?.let { arr ->
+        (0 until arr.length()).map { i ->
+          val a = arr.getJSONObject(i)
+          val env = a.getJSONArray("envelope")
+          EngineAudio(
+            id = a.getString("id"),
+            uri = a.getString("uri"),
+            start = a.getDouble("start"),
+            end = a.getDouble("end"),
+            inPoint = a.getDouble("inPoint"),
+            outPoint = a.getDouble("outPoint"),
+            loop = a.optBoolean("loop", false),
+            envelope = (0 until env.length()).map { j ->
+              val p = env.getJSONObject(j)
+              GainPoint(p.getDouble("t"), p.getDouble("gain"))
+            },
+          )
+        }
+      } ?: emptyList()
       return EngineComposition(
         width = o.getInt("width"),
         height = o.getInt("height"),
         fps = o.optDouble("fps", 30.0),
         clips = clips,
         texts = texts,
+        audio = audio,
       )
     }
   }

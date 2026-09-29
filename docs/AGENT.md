@@ -87,6 +87,29 @@ Con eso:
   el video exportado (iOS: una capa por palabra; Android: redibujo por
   palabra activa).
 
+## Creativo y marca (A4)
+
+- **B-roll**: el botón *B-roll* importa videos a la biblioteca sin tocar el
+  timeline. El agente (`add_broll`) los coloca en una pista superpuesta que
+  cubre la imagen mientras sigue sonando el audio principal. Se ve en una
+  franja morada encima de los clips. En el motor son `cutaways`: iOS usa una
+  pista de video extra y divide las instrucciones del compositor en los
+  bordes del B-roll (las transiciones mantienen su progreso); Android añade
+  una secuencia y un `VideoCompositorSettings` que la muestra solo en sus
+  ventanas. Si dos B-roll se solapan, gana el primero.
+- **Cortes al ritmo** (`sync_cuts_to_music`): decodifica la música, detecta
+  los golpes (energía que sube por encima de su media reciente) y mueve cada
+  corte al golpe más cercano si está a ≤ 0,25 s.
+- **Memoria de marca** (`remember`): preferencias duraderas ("subtítulos
+  siempre en amarillo", "mi color es #ff5a00") guardadas en
+  `documents/memory.json`, enviadas en cada mensaje y visibles en el panel,
+  donde se pueden borrar.
+- **Textos para publicar**: sugerencia "Título y hashtags para publicar"; el
+  agente responde con texto sin editar el proyecto.
+- **Evals**: `ANTHROPIC_API_KEY=… npm run eval:agent` ejecuta el ciclo
+  completo contra la API real con proyectos sintéticos (muletillas, vertical,
+  título, cortar por texto, hashtags). Sin clave se omite.
+
 ## Configuración
 
 ### Backend (Vercel, mismo proyecto que la web)

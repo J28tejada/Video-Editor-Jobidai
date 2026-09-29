@@ -82,6 +82,26 @@ data class EngineAudio(
   }
 }
 
+/** Full-screen B-roll over [start, end) (timeline), muted. */
+data class EngineCutaway(
+  val id: String,
+  val uri: String,
+  val start: Double,
+  val end: Double,
+  val inPoint: Double,
+  val fit: String,
+  val colorMatrix: DoubleArray?,
+  val srcWidth: Double,
+  val srcHeight: Double,
+) {
+  /** As a clip, so it goes through the same effects as base clips. */
+  fun asClip() = EngineClip(
+    id = id, uri = uri, inPoint = inPoint, outPoint = inPoint + (end - start), start = start,
+    speed = 1.0, volume = 0.0, fit = fit, colorMatrix = colorMatrix, transform = null,
+    transformKeys = null, srcWidth = srcWidth, srcHeight = srcHeight,
+  )
+}
+
 data class EngineComposition(
   val width: Int,
   val height: Int,
@@ -90,6 +110,7 @@ data class EngineComposition(
   val texts: List<EngineText>,
   val audio: List<EngineAudio>,
   val transitions: List<EngineTransition>,
+  val cutaways: List<EngineCutaway> = emptyList(),
 ) {
   val duration: Double get() = clips.lastOrNull()?.end ?: 0.0
 
@@ -187,6 +208,24 @@ data class EngineComposition(
           EngineTransition(t.getInt("index"), t.optString("kind", "crossfade"), t.getDouble("half"))
         }
       } ?: emptyList()
+      val cutaways = o.optJSONArray("cutaways")?.let { arr ->
+        (0 until arr.length()).map { i ->
+          val c = arr.getJSONObject(i)
+          EngineCutaway(
+            id = c.getString("id"),
+            uri = c.getString("uri"),
+            start = c.getDouble("start"),
+            end = c.getDouble("end"),
+            inPoint = c.getDouble("inPoint"),
+            fit = c.optString("fit", "cover"),
+            colorMatrix = c.optJSONArray("colorMatrix")?.let { m ->
+              if (m.length() == 12) DoubleArray(12) { k -> m.getDouble(k) } else null
+            },
+            srcWidth = c.optDouble("srcWidth", 0.0),
+            srcHeight = c.optDouble("srcHeight", 0.0),
+          )
+        }
+      } ?: emptyList()
       return EngineComposition(
         width = o.getInt("width"),
         height = o.getInt("height"),
@@ -195,6 +234,7 @@ data class EngineComposition(
         texts = texts,
         audio = audio,
         transitions = transitions,
+        cutaways = cutaways,
       )
     }
   }

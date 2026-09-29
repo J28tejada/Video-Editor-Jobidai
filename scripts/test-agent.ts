@@ -7,9 +7,26 @@ import assert from 'node:assert/strict';
 
 import { handleAgent, echoable } from '../api/_lib/agent';
 import { handleDescribe } from '../api/_lib/describe';
-import { detectShots, findFillers, longPauses, suggestEdits, timelineWords } from '../src/core/agent/understanding';
+import {
+  beatsOnTimeline,
+  detectBeats,
+  detectShots,
+  findFillers,
+  longPauses,
+  suggestEdits,
+  timelineWords,
+} from '../src/core/agent/understanding';
 import { describeProject } from '../src/core/agent/context';
-import { addEmphasisZoom, cutSourceRanges, deleteRange, keepRanges, reframeKeys, timelineToSourceRanges } from '../src/core/agent/editOps';
+import {
+  addBroll,
+  addEmphasisZoom,
+  cutSourceRanges,
+  deleteRange,
+  keepRanges,
+  reframeKeys,
+  snapCutsToBeats,
+  timelineToSourceRanges,
+} from '../src/core/agent/editOps';
 import { transformAt } from '../src/core/timeline/types';
 import { executeTool } from '../src/core/agent/execute';
 import { runAgent } from '../src/core/agent/loop';
@@ -199,6 +216,41 @@ await test('reframe keeps a subject centered within the covered frame', () => {
   // Subject at the very edge: clamped so the frame stays covered.
   const edge = reframeKeys(1920, 1080, 1080, 1920, 0, 2, [{ t: 1, x: 0.0, y: 0.5 }]);
   assert.ok(near(edge[0].xNorm, fw / 2, 1e-9));
+});
+
+await test('b-roll: placed on an overlay track, muted, clamped to the edit', () => {
+  let p = run(sample(), 'add_broll', { source_id: 'srcB', source_start: 1, at: 2, duration: 3 });
+  const overlay = p.tracks.filter((t) => t.role === 'overlay');
+  assert.equal(overlay.length, 1);
+  const c = overlay[0].clips[0];
+  assert.equal(c.muted, true);
+  assert.ok(near(c.startInTimeline, 2) && near(c.outPoint, 4));
+  // Overlapping cutaway goes to a second overlay track; past-the-end is clamped.
+  p = addBroll(p, 'srcA', 0, 3, 2);
+  assert.equal(p.tracks.filter((t) => t.role === 'overlay').length, 2);
+  const end = addBroll(sample(), 'srcA', 0, 15, 5);
+  assert.ok(near(totalDuration(end), 16));
+  assert.ok(describeProject(p, { playhead: 0, selection: null }).includes('B-roll'));
+});
+
+await test('beats: detected from a click track and placed on the timeline', () => {
+  const rate = 16000;
+  const samples = new Float32Array(rate * 3);
+  for (const b of [0.5, 1.0, 1.5, 2.0, 2.5]) {
+    for (let i = 0; i < 400; i++) samples[Math.round(b * rate) + i] = 0.8 * Math.sin(i * 0.3);
+  }
+  const beats = detectBeats(samples, rate);
+  assert.deepEqual(beats.map((b) => Math.round(b * 10) / 10), [0.5, 1, 1.5, 2, 2.5]);
+  const onTl = beatsOnTimeline([0.5, 1.0], { startSec: 4, inPoint: 0, outPoint: 1.5, loop: true }, 8);
+  assert.deepEqual(onTl, [4.5, 5, 6, 6.5, 7.5]);
+});
+
+await test('snap cuts to beats within the tolerance', () => {
+  const p = snapCutsToBeats(sample(), [9.8, 14]);
+  const [a, b] = primaryTrack(p).clips;
+  assert.ok(near(a.outPoint, 9.8) && near(b.startInTimeline, 9.8));
+  const untouched = snapCutsToBeats(sample(), [8]);
+  assert.ok(near(primaryTrack(untouched).clips[0].outPoint, 10));
 });
 
 // ---- understanding ----

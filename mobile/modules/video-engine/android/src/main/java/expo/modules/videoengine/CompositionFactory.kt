@@ -37,9 +37,12 @@ import com.google.common.collect.ImmutableList
  *  1. transitions (only if any) — during each transition window, the "other"
  *     side of the cut (the incoming clip's lead-in before the cut, the
  *     outgoing clip's tail after it; held first/last frame when the source has
- *     no more footage), silent gaps elsewhere. [TransitionSettings] blends it
+ *     no more footage), silent gaps elsewhere. [LayerSettings] blends it
  *     with the main sequence;
- *  2+. music and sound-effect audio lanes.
+ *  2. B-roll (only if any) — full-screen cutaways with silent gaps elsewhere;
+ *     during a cutaway the main sequence is made transparent so the B-roll
+ *     shows, while the main audio keeps playing;
+ *  3+. music and sound-effect audio lanes.
  *
  * Blocking (may extract freeze frames) — build off the main thread.
  */
@@ -61,14 +64,24 @@ object CompositionFactory {
     val transitions = spec.transitions
       .filter { it.index >= 0 && it.index + 1 < spec.clips.size && it.half > 0 }
       .sortedBy { it.index }
+    var transitionInput = -1
     if (transitions.isNotEmpty()) {
+      transitionInput = sequences.size
       sequences += transitionSequence(spec, transitions, width, height, freezes)
+    }
+    val cutaways = nonOverlapping(spec.cutaways, spec.duration)
+    var cutawayInput = -1
+    if (cutaways.isNotEmpty()) {
+      cutawayInput = sequences.size
+      sequences += cutawaySequence(spec, cutaways, width, height)
     }
     sequences += AudioLayers.sequences(spec.audio, spec.duration)
 
     val builder = Composition.Builder(sequences)
-    if (transitions.isNotEmpty()) {
-      builder.setVideoCompositorSettings(TransitionSettings(spec, transitions, width, height))
+    if (transitionInput >= 0 || cutawayInput >= 0) {
+      builder.setVideoCompositorSettings(
+        LayerSettings(spec, transitions, cutaways, transitionInput, cutawayInput, width, height),
+      )
     }
     if (includeTexts && spec.texts.isNotEmpty()) {
       // Composition-level effects run after compositing, so text stays on top
@@ -120,6 +133,34 @@ object CompositionFactory {
       cursorUs = us(cut + tr.half)
     }
     // Keep the sequence alive to the end (blank frames are made transparent).
+    val endUs = us(spec.duration)
+    if (endUs > cursorUs) seq.addGap(endUs - cursorUs)
+    return seq.build()
+  }
+
+  private fun nonOverlapping(cutaways: List<EngineCutaway>, duration: Double): List<EngineCutaway> {
+    val out = mutableListOf<EngineCutaway>()
+    for (c in cutaways.sortedBy { it.start }) {
+      if (c.end > c.start + 0.1 && c.start < duration && (out.lastOrNull()?.end ?: 0.0) <= c.start + 1e-3) out += c
+    }
+    return out
+  }
+
+  private fun cutawaySequence(
+    spec: EngineComposition,
+    cutaways: List<EngineCutaway>,
+    width: Int,
+    height: Int,
+  ): EditedMediaItemSequence {
+    val seq = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO))
+    var cursorUs = 0L
+    for (c in cutaways) {
+      val startUs = us(c.start)
+      if (startUs > cursorUs) seq.addGap(startUs - cursorUs)
+      val clip = c.asClip()
+      seq.addItem(clipItem(clip, clip.inPoint, clip.outPoint, width, height, spec.fps, withAudio = false))
+      cursorUs = us(c.end)
+    }
     val endUs = us(spec.duration)
     if (endUs > cursorUs) seq.addGap(endUs - cursorUs)
     return seq.build()
@@ -279,14 +320,18 @@ class KeyframedTransform(
 }
 
 /**
- * Blends the main sequence (input 0, on top) with the transition sequence
- * (input 1, below) inside each transition window; outside them the
- * transition sequence is transparent.
+ * Per-frame layer visibility. The main sequence (input 0) is on top:
+ *  - inside a transition window it is blended with the transition sequence;
+ *  - inside a B-roll window it becomes transparent so the cutaway (below)
+ *    shows. The transition and B-roll sequences are hidden elsewhere.
  */
 @UnstableApi
-class TransitionSettings(
+class LayerSettings(
   private val spec: EngineComposition,
   private val transitions: List<EngineTransition>,
+  private val cutaways: List<EngineCutaway>,
+  private val transitionInput: Int,
+  private val cutawayInput: Int,
   private val width: Int,
   private val height: Int,
 ) : VideoCompositorSettings {
@@ -297,14 +342,18 @@ class TransitionSettings(
 
   override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
     val t = presentationTimeUs / 1e6
+    val inCutaway = cutaways.any { t >= it.start && t < it.end }
+    if (inputId == cutawayInput) return if (inCutaway) shown else hidden
+    if (inCutaway) return hidden
+
+    val isMain = inputId == 0
     val tr = transitions.firstOrNull { tr ->
       val cut = spec.clips[tr.index + 1].start
       t >= cut - tr.half && t < cut + tr.half
-    } ?: return if (inputId == 0) shown else hidden
+    } ?: return if (isMain) shown else hidden
     val cut = spec.clips[tr.index + 1].start
     val p = ((t - (cut - tr.half)) / (2 * tr.half)).coerceIn(0.0, 1.0).toFloat()
     val beforeCut = t < cut
-    val isMain = inputId == 0
     return when (tr.kind) {
       "fade" -> if (!isMain) hidden else alpha(if (beforeCut) 1 - 2 * p else 2 * p - 1)
       "slide" -> {

@@ -46,6 +46,17 @@ export function describeProject(project: Project, opts: ContextOptions): string 
   if (clips.length === 0) lines.push('  (vacía — el usuario debe importar videos)');
   clips.forEach((c, i) => lines.push(`  ${i}. ${describeClip(project, c)}`));
 
+  const broll = project.tracks
+    .filter((t) => t.role === 'overlay')
+    .flatMap((t) => t.clips);
+  if (broll.length) {
+    lines.push('', 'B-roll (cubre la imagen, sin su audio):');
+    for (const c of broll) {
+      const name = project.sources.find((s) => s.id === c.sourceId)?.name ?? c.sourceId;
+      lines.push(`  - ${c.id} "${name}" ${f(c.startInTimeline)}–${f(clipEnd(c))} s (fuente ${f(c.inPoint)}–${f(c.outPoint)})`);
+    }
+  }
+
   if (project.transitions.length) {
     lines.push('', 'Transiciones:');
     for (const t of project.transitions) {

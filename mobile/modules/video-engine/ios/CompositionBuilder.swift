@@ -159,10 +159,11 @@ enum CompositionBuilder {
     // Absorb rounding drift so the instructions end exactly at the composition end.
     if let last = instructions.popLast() {
       instructions.append(
-        EngineInstruction(
-          timeRange: CMTimeRange(start: last.timeRange.start, end: composition.duration),
-          from: last.from, to: last.to, kind: last.kind))
+        last.piece(CMTimeRange(start: last.timeRange.start, end: composition.duration), overlay: nil))
     }
+    let cutaways = try await addCutaways(
+      spec.cutaways, to: composition, renderSize: renderSize, end: composition.duration)
+    if !cutaways.isEmpty { instructions = split(instructions, by: cutaways) }
 
     let videoComposition = AVMutableVideoComposition()
     videoComposition.customVideoCompositorClass = EngineCompositor.self
@@ -182,6 +183,71 @@ enum CompositionBuilder {
     return BuiltComposition(
       asset: composition, videoComposition: videoComposition, audioMix: audioMix,
       duration: composition.duration.seconds)
+  }
+
+  /// B-roll on its own video track (overlapping ones after the first are
+  /// dropped, as on Android), shown in full cover over the main picture.
+  private static func addCutaways(
+    _ cutaways: [EngineCutaway], to composition: AVMutableComposition, renderSize: CGSize,
+    end: CMTime
+  ) async throws -> [(range: CMTimeRange, layer: ClipLayer)] {
+    guard !cutaways.isEmpty,
+      let track = composition.addMutableTrack(
+        withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+    else { return [] }
+    var out: [(range: CMTimeRange, layer: ClipLayer)] = []
+    var busyUntil = 0.0
+    for c in cutaways.sorted(by: { $0.start < $1.start }) where c.start >= busyUntil - 0.001 {
+      let startT = seconds(max(0, c.start))
+      let endT = CMTimeMinimum(seconds(c.end), end)
+      guard endT > startT, let url = URL(string: c.uri) else { continue }
+      let asset = AVURLAsset(url: url)
+      guard let src = try await asset.loadTracks(withMediaType: .video).first else { continue }
+      let assetDuration = try await asset.load(.duration)
+      let natural = try await src.load(.naturalSize)
+      let preferred = try await src.load(.preferredTransform)
+      let inTime = seconds(max(0, c.inPoint))
+      let length = CMTimeMinimum(endT - startT, assetDuration - inTime)
+      guard length > .zero else { continue }
+      try track.insertTimeRange(CMTimeRange(start: inTime, duration: length), of: src, at: startT)
+      let range = CMTimeRange(start: startT, duration: length)
+      out.append((
+        range,
+        ClipLayer(
+          trackID: track.trackID,
+          transform: placement(
+            natural: natural, preferred: preferred, render: renderSize, cover: c.fit == "cover",
+            zoom: nil),
+          colorMatrix: c.colorMatrix)
+      ))
+      busyUntil = range.end.seconds
+    }
+    if out.isEmpty { composition.removeTrack(track) }
+    return out
+  }
+
+  /// Splits instructions at B-roll boundaries so each piece either has the
+  /// B-roll on top or not; transition progress keeps its full window.
+  private static func split(
+    _ instructions: [EngineInstruction], by cutaways: [(range: CMTimeRange, layer: ClipLayer)]
+  ) -> [EngineInstruction] {
+    var out: [EngineInstruction] = []
+    for ins in instructions {
+      var cuts = [ins.timeRange.start, ins.timeRange.end]
+      for c in cutaways {
+        for t in [c.range.start, c.range.end] where t > ins.timeRange.start && t < ins.timeRange.end {
+          cuts.append(t)
+        }
+      }
+      cuts.sort { $0 < $1 }
+      for i in 0..<(cuts.count - 1) where cuts[i + 1] > cuts[i] {
+        let piece = CMTimeRange(start: cuts[i], end: cuts[i + 1])
+        let mid = piece.start + CMTimeMultiplyByRatio(piece.duration, multiplier: 1, divisor: 2)
+        let overlay = cutaways.first { $0.range.containsTime(mid) }?.layer
+        out.append(ins.piece(piece, overlay: overlay))
+      }
+    }
+    return out
   }
 
   /// Inserts `length` of source starting at `from` so that it occupies

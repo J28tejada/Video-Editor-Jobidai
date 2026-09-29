@@ -49,7 +49,8 @@ export function AgentBar({ onOpen }: { onOpen: () => void }) {
 }
 
 export function AgentPanel({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { configured, log, status, run, cancel, undoCard, reset, suggestions, analyze } = useAgent();
+  const { configured, log, status, run, cancel, undoCard, reset, suggestions, analyze, memory, forget } =
+    useAgent();
   const { duration } = useEditor();
   const [text, setText] = useState('');
   const insets = useSafeAreaInsets();
@@ -115,6 +116,19 @@ export function AgentPanel({ visible, onClose }: { visible: boolean; onClose: ()
                   </Pressable>
                 ))}
               </View>
+              {memory.length > 0 && (
+                <View style={styles.memory}>
+                  <Text style={styles.memoryTitle}>Tu estilo (lo aplico siempre)</Text>
+                  {memory.map((m, i) => (
+                    <View key={`${i}-${m}`} style={styles.memoryRow}>
+                      <Text style={styles.memoryText}>• {m}</Text>
+                      <Pressable onPress={() => forget(i)} hitSlop={8}>
+                        <Icon name="close" size={14} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
             </>
           )}
           {log.map((e) => (
@@ -237,6 +251,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   chipText: { color: colors.text, fontSize: 13 },
+  memory: { marginTop: 6, gap: 4 },
+  memoryTitle: { color: colors.textDim, fontSize: 12, fontWeight: '700' },
+  memoryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  memoryText: { flex: 1, color: colors.text, fontSize: 13 },
   bubble: { padding: 10, borderRadius: radius.md, maxWidth: '88%' },
   userBubble: { alignSelf: 'flex-end', backgroundColor: colors.accent },
   agentBubble: { alignSelf: 'flex-start', backgroundColor: colors.panel },

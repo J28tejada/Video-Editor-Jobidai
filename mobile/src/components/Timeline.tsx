@@ -140,6 +140,7 @@ export function Timeline() {
         >
           <Pressable style={{ width: contentWidth }} onPress={() => select(null)}>
             <Ruler duration={duration} />
+            <BrollLane project={project} />
             <View style={styles.clipLane}>
               {clips.map((clip) => (
                 <ClipBlock
@@ -309,6 +310,33 @@ function TextLane({ overlays }: { overlays: TextOverlay[] }) {
               T {o.text}
             </Text>
           </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** B-roll (overlay-track clips) above the base track; shown only when present. */
+function BrollLane({ project }: { project: Project }) {
+  const broll = project.tracks.filter((t) => t.role === 'overlay').flatMap((t) => t.clips);
+  if (broll.length === 0) return null;
+  return (
+    <View style={styles.audioLane}>
+      {broll.map((c) => {
+        const name = project.sources.find((s) => s.id === c.sourceId)?.name ?? 'B-roll';
+        const len = (c.outPoint - c.inPoint) / (c.speed && c.speed > 0 ? c.speed : 1);
+        return (
+          <View
+            key={c.id}
+            style={[
+              styles.audioBlock,
+              { left: c.startInTimeline * PPS, width: Math.max(10, len * PPS), backgroundColor: colors.brollClip },
+            ]}
+          >
+            <Text style={styles.textBlockLabel} numberOfLines={1}>
+              ▣ {name}
+            </Text>
+          </View>
         );
       })}
     </View>

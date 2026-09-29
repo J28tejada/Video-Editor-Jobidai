@@ -184,5 +184,60 @@ export function suggestEdits(project: Project, index: SourceIndex[]): Suggestion
   if (!project.music.length) {
     out.push({ id: 'polish', label: 'Hacerlo más dinámico', prompt: 'Hazlo más dinámico: transiciones suaves, un look más vivo y efectos de sonido en los cortes.' });
   }
-  return out.slice(0, 6);
+  if (words.length) {
+    out.push({
+      id: 'publish',
+      label: 'Título y hashtags para publicar',
+      prompt:
+        'Escribe un título atractivo, una descripción corta y 8–10 hashtags para publicar este video (no edites nada).',
+    });
+  }
+  return out.slice(0, 7);
+}
+
+/**
+ * Beat / onset times (seconds) in mono audio: short-time energy that jumps
+ * well above its recent average, at least `minGap` apart.
+ */
+export function detectBeats(samples: Float32Array, rate: number, minGap = 0.25): number[] {
+  const hop = Math.max(1, Math.round(rate * 0.01)); // 10 ms
+  const energies: number[] = [];
+  for (let i = 0; i + hop <= samples.length; i += hop) {
+    let sum = 0;
+    for (let j = i; j < i + hop; j++) sum += samples[j] * samples[j];
+    energies.push(sum / hop);
+  }
+  const history = 50; // ~0.5 s of context
+  const beats: number[] = [];
+  let last = -Infinity;
+  for (let i = 1; i < energies.length; i++) {
+    const from = Math.max(0, i - history);
+    let avg = 0;
+    for (let j = from; j < i; j++) avg += energies[j];
+    avg /= i - from;
+    const t = (i * hop) / rate;
+    const rising = energies[i] > energies[i - 1];
+    if (rising && energies[i] > avg * 1.8 && energies[i] > 1e-4 && t - last >= minGap) {
+      beats.push(t);
+      last = t;
+    }
+  }
+  return beats;
+}
+
+/** Music source beats → timeline times (music placement, trim and looping). */
+export function beatsOnTimeline(
+  beats: number[],
+  music: { startSec: number; inPoint: number; outPoint: number; loop: boolean },
+  duration: number,
+): number[] {
+  const seg = music.outPoint - music.inPoint;
+  if (seg <= 0) return [];
+  const local = beats.filter((b) => b >= music.inPoint && b < music.outPoint).map((b) => b - music.inPoint);
+  const out: number[] = [];
+  for (let offset = music.startSec; offset < duration; offset += seg) {
+    for (const b of local) if (offset + b < duration) out.push(offset + b);
+    if (!music.loop) break;
+  }
+  return out;
 }

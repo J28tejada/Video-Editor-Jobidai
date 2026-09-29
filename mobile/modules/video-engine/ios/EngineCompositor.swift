@@ -60,16 +60,33 @@ final class EngineInstruction: NSObject, AVVideoCompositionInstructionProtocol {
   let from: ClipLayer
   let to: ClipLayer?
   let kind: String
+  /// Full transition window (the instruction may be a piece of it after
+  /// splitting at B-roll boundaries), so progress stays continuous.
+  let window: CMTimeRange
+  /// B-roll drawn over everything, or nil.
+  let overlay: ClipLayer?
 
-  init(timeRange: CMTimeRange, from: ClipLayer, to: ClipLayer? = nil, kind: String = "") {
+  init(
+    timeRange: CMTimeRange, from: ClipLayer, to: ClipLayer? = nil, kind: String = "",
+    window: CMTimeRange? = nil, overlay: ClipLayer? = nil
+  ) {
     self.timeRange = timeRange
     self.from = from
     self.to = to
     self.kind = kind
+    self.window = window ?? timeRange
+    self.overlay = overlay
     var ids = [NSNumber(value: from.trackID)]
     if let to { ids.append(NSNumber(value: to.trackID)) }
+    if let overlay { ids.append(NSNumber(value: overlay.trackID)) }
     self.requiredSourceTrackIDs = ids
     super.init()
+  }
+
+  /// Same instruction restricted to `range`, with an optional B-roll on top.
+  func piece(_ range: CMTimeRange, overlay: ClipLayer?) -> EngineInstruction {
+    EngineInstruction(
+      timeRange: range, from: from, to: to, kind: kind, window: window, overlay: overlay)
   }
 }
 
@@ -106,7 +123,13 @@ final class EngineCompositor: NSObject, AVVideoCompositing {
         return
       }
       let size = request.renderContext.size
-      let image = self.compose(instruction, request: request, size: size)
+      var image = self.compose(instruction, request: request, size: size)
+      if let overlay = instruction.overlay,
+        let top = self.layerImage(overlay, request: request, size: size)
+      {
+        let black = CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: size))
+        image = top.composited(over: black)
+      }
       self.context.render(
         image, to: output, bounds: CGRect(origin: .zero, size: size), colorSpace: EngineCompositor.srgb)
       request.finish(withComposedVideoFrame: output)
@@ -124,7 +147,7 @@ final class EngineCompositor: NSObject, AVVideoCompositing {
       return (a?.composited(over: black) ?? black).cropped(to: rect)
     }
     let b = layerImage(incoming, request: request, size: size)
-    let range = instruction.timeRange
+    let range = instruction.window
     let p = min(
       1,
       max(0, (request.compositionTime - range.start).seconds / max(0.001, range.duration.seconds)))

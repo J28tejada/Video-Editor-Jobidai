@@ -64,6 +64,17 @@ struct EngineText: Decodable {
   let highlightColor: String?
 }
 
+/// B-roll that covers the main picture (no sound) over [start, end).
+struct EngineCutaway: Decodable {
+  let id: String
+  let uri: String
+  let start: Double
+  let end: Double
+  let inPoint: Double
+  let fit: String
+  let colorMatrix: [Double]?
+}
+
 struct GainPoint: Decodable {
   let t: Double
   let gain: Double
@@ -88,8 +99,9 @@ struct EngineComposition: Decodable {
   let texts: [EngineText]
   let audio: [EngineAudio]
   let transitions: [EngineTransition]
+  let cutaways: [EngineCutaway]
 
-  enum CodingKeys: String, CodingKey { case width, height, fps, clips, texts, audio, transitions }
+  enum CodingKeys: String, CodingKey { case width, height, fps, clips, texts, audio, transitions, cutaways }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -100,6 +112,7 @@ struct EngineComposition: Decodable {
     texts = try c.decodeIfPresent([EngineText].self, forKey: .texts) ?? []
     audio = try c.decodeIfPresent([EngineAudio].self, forKey: .audio) ?? []
     transitions = try c.decodeIfPresent([EngineTransition].self, forKey: .transitions) ?? []
+    cutaways = try c.decodeIfPresent([EngineCutaway].self, forKey: .cutaways) ?? []
   }
 
   static func decode(_ json: String) throws -> EngineComposition {

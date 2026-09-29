@@ -204,3 +204,86 @@ export function setTransformKeys(
   );
   return { ...project, tracks: project.tracks.map((t) => (t.id === base.id ? { ...t, clips } : t)) };
 }
+
+/** End of the base track (b-roll never extends the edit). */
+function baseEnd(project: Project): number {
+  const clips = primaryTrack(project).clips;
+  return clips.length ? clipEnd(clips[clips.length - 1]) : 0;
+}
+
+/**
+ * Full-screen B-roll cutaway: a (muted) shot from the library covers the
+ * picture for [at, at + duration) while the main audio keeps playing. Placed
+ * on the first overlay track with room, or a new one.
+ */
+export function addBroll(
+  project: Project,
+  sourceId: string,
+  sourceStart: number,
+  at: number,
+  duration: number,
+): Project {
+  const source = project.sources.find((s) => s.id === sourceId);
+  if (!source) return project;
+  const end = Math.min(at + duration, baseEnd(project));
+  const start = Math.max(0, at);
+  const inPoint = Math.max(0, Math.min(sourceStart, source.durationSec - 0.2));
+  const len = Math.min(end - start, source.durationSec - inPoint);
+  if (len < 0.2) return project;
+  const clip: Clip = {
+    id: `clip_b${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`,
+    kind: 'video',
+    sourceId,
+    inPoint,
+    outPoint: inPoint + len,
+    startInTimeline: start,
+    muted: true,
+    volume: 0,
+    fit: 'cover',
+  };
+  const free = project.tracks.find(
+    (t) =>
+      t.role === 'overlay' &&
+      t.clips.every((c) => clipEnd(c) <= start + EPS || c.startInTimeline >= start + len - EPS),
+  );
+  if (free) {
+    return {
+      ...project,
+      tracks: project.tracks.map((t) =>
+        t.id === free.id ? { ...t, clips: [...t.clips, clip].sort((a, b) => a.startInTimeline - b.startInTimeline) } : t,
+      ),
+    };
+  }
+  const track = { id: `track_b${Date.now().toString(36)}`, kind: 'video' as const, role: 'overlay' as const, clips: [clip] };
+  return { ...project, tracks: [...project.tracks, track] };
+}
+
+/**
+ * Move each cut between base clips onto the nearest beat within `maxShift`
+ * seconds by lengthening/shortening the clip before it (later clips follow).
+ */
+export function snapCutsToBeats(project: Project, beats: number[], maxShift = 0.25): Project {
+  if (beats.length === 0) return project;
+  const base = primaryTrack(project);
+  const clips = base.clips.map((c) => ({ ...c }));
+  let cursor = 0;
+  for (let i = 0; i < clips.length; i++) {
+    const c = clips[i];
+    const speed = c.speed && c.speed > 0 ? c.speed : 1;
+    c.startInTimeline = cursor;
+    let end = cursor + (c.outPoint - c.inPoint) / speed;
+    if (i < clips.length - 1) {
+      const nearest = beats.reduce((best, b) => (Math.abs(b - end) < Math.abs(best - end) ? b : best), beats[0]);
+      const shift = nearest - end;
+      const src = project.sources.find((s) => s.id === c.sourceId);
+      const maxOut = src?.durationSec ?? c.outPoint;
+      const newOut = c.outPoint + shift * speed;
+      if (Math.abs(shift) <= maxShift && newOut <= maxOut && newOut - c.inPoint > 0.2) {
+        c.outPoint = newOut;
+        end = nearest;
+      }
+    }
+    cursor = end;
+  }
+  return { ...project, tracks: project.tracks.map((t) => (t.id === base.id ? { ...t, clips } : t)) };
+}

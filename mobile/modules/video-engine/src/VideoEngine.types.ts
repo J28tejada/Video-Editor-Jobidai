@@ -100,6 +100,22 @@ export type EngineAudio = {
   envelope: GainPoint[];
 };
 
+/**
+ * Full-screen B-roll: covers the picture over [start, end) (timeline) with a
+ * muted shot starting at `inPoint` of its source; the main audio continues.
+ */
+export type EngineCutaway = {
+  id: string;
+  uri: string;
+  start: number;
+  end: number;
+  inPoint: number;
+  fit: 'contain' | 'cover';
+  colorMatrix: number[] | null;
+  srcWidth: number;
+  srcHeight: number;
+};
+
 export type EngineComposition = {
   width: number;
   height: number;
@@ -108,6 +124,7 @@ export type EngineComposition = {
   texts: EngineText[];
   audio: EngineAudio[];
   transitions: EngineTransition[];
+  cutaways: EngineCutaway[];
 };
 
 export type MediaInfo = {

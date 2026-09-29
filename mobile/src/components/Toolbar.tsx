@@ -90,6 +90,23 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
         },
       },
       {
+        icon: 'broll',
+        label: 'B-roll',
+        onPress: () => {
+          if (duration <= 0) return;
+          importVideos({ library: true })
+            .then((n) => {
+              if (n > 0) {
+                Alert.alert(
+                  'B-roll añadido',
+                  'Quedó en tu biblioteca. Pídele al asistente, por ejemplo: "pon el B-roll cuando hablo del producto".',
+                );
+              }
+            })
+            .catch((e: Error) => Alert.alert('No se pudo importar', e.message));
+        },
+      },
+      {
         icon: 'ai',
         label: 'IA',
         onPress: () => {

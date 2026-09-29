@@ -36,7 +36,14 @@ import {
 import type { ClipFilters, Project, TextOverlay } from '../timeline/types';
 import { synthDuration } from '../audio/sfxList';
 import type { SourceIndex } from './context';
-import { addEmphasisZoom, cutSourceRanges, deleteRange, keepRanges, timelineToSourceRanges } from './editOps';
+import {
+  addBroll,
+  addEmphasisZoom,
+  cutSourceRanges,
+  deleteRange,
+  keepRanges,
+  timelineToSourceRanges,
+} from './editOps';
 import { findFillers, timelineWords } from './understanding';
 
 export type ToolCall = { name: string; input: unknown };
@@ -185,6 +192,18 @@ const HANDLERS: Record<string, (p: Project, input: Input, ctx: ExecContext) => T
     const next = addEmphasisZoom(p, at, duration, scale);
     if (next === p) throw new InputError(`No clip at ${at}.`);
     return ok(next, `Zoom de énfasis en ${s(at)}`);
+  },
+
+  add_broll(p, input) {
+    const sourceId = str(input, 'source_id');
+    const source = p.sources.find((x) => x.id === sourceId && x.kind !== 'audio');
+    if (!source) throw new InputError(`Unknown video source "${sourceId}".`);
+    const at = num(input, 'at', 0, totalDuration(p));
+    const duration = num(input, 'duration', 0.5, 15);
+    const from = optNum(input, 'source_start', 0, source.durationSec) ?? 0;
+    const next = addBroll(p, sourceId, from, at, duration);
+    if (next === p) throw new InputError('No room for the cutaway there (past the end, or source too short).');
+    return ok(next, `B-roll "${source.name}" en ${s(at)}`);
   },
 
   split_at(p, input) {

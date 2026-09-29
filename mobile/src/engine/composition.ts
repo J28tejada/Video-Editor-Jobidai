@@ -80,6 +80,31 @@ export function toEngineComposition(
       ...(o.words?.length ? { words: o.words, highlightColor: o.highlightColor ?? '#ffe600' } : {}),
     }));
   const audio = toEngineAudio(project, cursor, resolveUri, synthUri);
+
+  // B-roll: overlay-track clips, full screen, within the base edit.
+  const cutaways: EngineComposition['cutaways'] = [];
+  for (const track of project.tracks) {
+    if (track.role !== 'overlay') continue;
+    for (const c of track.clips) {
+      const uri = resolveUri(c.sourceId);
+      const start = c.startInTimeline;
+      const end = Math.min(cursor, start + clipDuration(c));
+      if (!uri || end - start < 0.1) continue;
+      const src = project.sources.find((x) => x.id === c.sourceId);
+      cutaways.push({
+        id: c.id,
+        uri,
+        start,
+        end,
+        inPoint: c.inPoint,
+        fit: c.fit ?? 'cover',
+        colorMatrix: filtersToMatrix(c.filters),
+        srcWidth: src?.width || project.width,
+        srcHeight: src?.height || project.height,
+      });
+    }
+  }
+  cutaways.sort((a, b) => a.start - b.start);
   return {
     width: project.width,
     height: project.height,
@@ -88,6 +113,7 @@ export function toEngineComposition(
     texts,
     audio,
     transitions,
+    cutaways,
   };
 }
 

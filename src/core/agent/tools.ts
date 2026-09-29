@@ -340,6 +340,42 @@ export const AGENT_TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'add_broll',
+    description:
+      "Cover the picture with a shot from the user's library (B-roll cutaway) while the main audio keeps playing. Pick shots whose description matches what is being said.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        source_id: { type: 'string', description: 'A video from the library or the timeline.' },
+        source_start: seconds('Where in that video the shot starts (source seconds).'),
+        at: seconds('Timeline time where the cutaway starts.'),
+        duration: { type: 'number', minimum: 0.5, maximum: 15 },
+      },
+      required: ['source_id', 'at', 'duration'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'sync_cuts_to_music',
+    description: 'Move the cuts between clips onto the beats of the background music (small shifts only).',
+    input_schema: {
+      type: 'object',
+      properties: { music_id: { type: 'string', description: 'Defaults to the first music track.' } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'remember',
+    description:
+      "Save a lasting preference of the user's style or brand (colors, caption style, tone, intro/outro, platform) to apply in future edits. Use when the user states a preference that should persist.",
+    input_schema: {
+      type: 'object',
+      properties: { preference: { type: 'string' } },
+      required: ['preference'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /** Tools the app runs asynchronously on the device (not pure project edits). */
@@ -348,4 +384,6 @@ export const DEVICE_TOOLS = new Set([
   'remove_silences',
   'analyze_media',
   'auto_reframe',
+  'sync_cuts_to_music',
+  'remember',
 ]);

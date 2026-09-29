@@ -102,7 +102,8 @@ type EditorValue = {
   undo: () => void;
   redo: () => void;
 
-  importVideos: () => Promise<number>;
+  /** Import videos; `library` keeps them off the timeline (B-roll for the agent). */
+  importVideos: (opts?: { library?: boolean }) => Promise<number>;
   split: () => void;
   removeSelected: () => void;
   trim: (clipId: string, edge: 'in' | 'out', sourceTime: number) => void;
@@ -303,7 +304,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   // ---- Edits ----
 
-  const importVideos = useCallback(async () => {
+  const importVideos = useCallback(async (opts?: { library?: boolean }) => {
     const imported = await pickAndImportVideos();
     if (imported.length === 0) return 0;
     setMedia((m) => {
@@ -311,7 +312,17 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       for (const i of imported) next[i.meta.id] = i.fileName;
       return next;
     });
-    apply((p) => imported.reduce((acc, i) => appendClipFromSource(acc, i.meta), p));
+    if (opts?.library) {
+      apply((p) => ({
+        ...p,
+        sources: [
+          ...p.sources,
+          ...imported.map((i) => i.meta).filter((m) => !p.sources.some((s) => s.id === m.id)),
+        ],
+      }));
+    } else {
+      apply((p) => imported.reduce((acc, i) => appendClipFromSource(acc, i.meta), p));
+    }
     return imported.length;
   }, [apply]);
 

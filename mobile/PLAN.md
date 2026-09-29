@@ -47,7 +47,7 @@ Arquitectura y configuración: [docs/AGENT.md](../docs/AGENT.md).
 | **A1 Núcleo del agente** | Barra "Pídele algo a tu editor" + panel con conversación, sugerencias y tarjetas de cambios con Deshacer; 20 herramientas (cortar, borrar tramos, recortar, mover, velocidad, volumen, color, encuadre, transiciones, textos, estilo de subtítulos, música, efectos, formato, subtítulos y silencios en el dispositivo); bucle en la app; backend `/api/agent` en Vercel con Claude Opus 5.5, caché y fallbacks | ✅ Hecho · probado con modelo simulado |
 | **A2 Comprensión** | Índice por fuente guardado en el teléfono: transcripción por palabra (Whisper), cambios de plano (nativo) y descripción de cada plano (`/api/describe`, Haiku 4.5); el agente lo recibe en su contexto; "Texto a video" (borrar palabras corta el video), muletillas, sugerencias calculadas; subtítulos instantáneos desde el análisis | ✅ Hecho · Android compila; iOS sin compilar |
 | **A3 Crear por intención** | Inicio "¿Qué quieres crear?" que lanza al agente; reel por tramos (`keep_only`); reencuadre automático con detección de caras nativa y encuadre animado; zooms de énfasis; transformaciones animadas en ambos motores (y la web); subtítulos karaoke en preview y export | ✅ Hecho · Android compila; iOS sin compilar |
-| **A4 Creativo y marca** | B-roll a pantalla completa, cortes al ritmo, textos para publicar, memoria de marca | Pendiente |
+| **A4 Creativo y marca** | B-roll a pantalla completa, cortes al ritmo, textos para publicar, memoria de marca | Hecho |
 
 ## Verificación hecha
 

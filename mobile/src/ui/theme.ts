@@ -13,6 +13,7 @@ export const colors = {
   textClip: '#8b5cf6',
   musicClip: '#0d9488',
   sfxClip: '#d97706',
+  brollClip: '#7c3aed',
   danger: '#ef4444',
 };
 

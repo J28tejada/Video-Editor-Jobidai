@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test:agent": "tsx scripts/test-agent.ts",
-    "typecheck:api": "tsc -p api/tsconfig.json"
+    "typecheck:api": "tsc -p api/tsconfig.json",
+    "eval:agent": "tsx scripts/agent-evals.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

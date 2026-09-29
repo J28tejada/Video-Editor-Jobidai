@@ -30,6 +30,7 @@ const ICONS = {
   transition: { ios: 'square.split.2x1', android: 'compare' },
   ai: { ios: 'sparkles', android: 'auto_awesome' },
   transcript: { ios: 'text.quote', android: 'notes' },
+  broll: { ios: 'rectangle.stack.badge.plus', android: 'video_call' },
 } as const;
 
 export type IconName = keyof typeof ICONS;

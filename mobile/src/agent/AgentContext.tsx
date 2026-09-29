@@ -16,16 +16,23 @@ import { describeProject, type SourceIndex } from '@agent/context';
 import { runAgent, type AgentEvent, type DeviceTool } from '@agent/loop';
 import type { AgentMessage } from '@agent/protocol';
 import { groupWords } from '@ai/captionLines';
-import { reframeKeys, setTransformKeys } from '@agent/editOps';
-import { suggestEdits, timelineWords, type Suggestion } from '@agent/understanding';
-import { applySilenceCuts, primaryTrack, setCaptionOverlays } from '@timeline/project';
+import { reframeKeys, setTransformKeys, snapCutsToBeats } from '@agent/editOps';
+import {
+  beatsOnTimeline,
+  detectBeats,
+  suggestEdits,
+  timelineWords,
+  type Suggestion,
+} from '@agent/understanding';
+import { applySilenceCuts, primaryTrack, setCaptionOverlays, totalDuration } from '@timeline/project';
 import type { Project } from '@timeline/types';
 import VideoEngine from '../../modules/video-engine';
 import { generateCaptions } from '../ai/captions';
+import { ANALYSIS_RATE, decodeMono } from '../ai/pcm';
 import { analyzeSilences, DEFAULT_SILENCE_OPTIONS, type SilenceOptions } from '../ai/silences';
 import { isModelDownloaded } from '../ai/whisperModel';
 import { analyzeSource } from '../analysis/analyze';
-import { loadIndex, saveIndex } from '../analysis/indexStore';
+import { loadIndex, loadMemory, saveIndex, saveMemory } from '../analysis/indexStore';
 import { useEditor } from '../editor/EditorContext';
 import { clockTime } from '../engine/playbackClock';
 import { sendTurn } from './client';
@@ -52,6 +59,9 @@ type AgentValue = {
   suggestions: Suggestion[];
   /** Analyze the timeline's sources that aren't analyzed yet. */
   analyze: () => Promise<void>;
+  /** Remembered style / brand preferences. */
+  memory: string[];
+  forget: (index: number) => void;
 };
 
 const AgentContext = createContext<AgentValue | null>(null);
@@ -67,6 +77,7 @@ const TOOL_LABELS: Record<string, string> = {
   remove_silences: 'Buscando silencios…',
   analyze_media: 'Analizando tus videos…',
   auto_reframe: 'Siguiendo a la persona en el cuadro…',
+  sync_cuts_to_music: 'Buscando el ritmo de la música…',
 };
 
 let seq = 0;
@@ -79,13 +90,30 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<string | null>(null);
   const history = useRef<AgentMessage[]>([]);
   const indexRef = useRef<SourceIndex[]>([]);
+  const [memory, setMemoryState] = useState<string[]>([]);
+  const memoryRef = useRef<string[]>([]);
 
   useEffect(() => {
     loadIndex().then((loaded) => {
       indexRef.current = loaded;
       setIndexState(loaded);
     });
+    loadMemory().then((loaded) => {
+      memoryRef.current = loaded;
+      setMemoryState(loaded);
+    });
   }, []);
+
+  const setMemory = useCallback((next: string[]) => {
+    memoryRef.current = next;
+    setMemoryState(next);
+    saveMemory(next);
+  }, []);
+
+  const forget = useCallback(
+    (i: number) => setMemory(memoryRef.current.filter((_, k) => k !== i)),
+    [setMemory],
+  );
 
   const updateIndex = useCallback((entries: SourceIndex[]) => {
     const merged = [
@@ -100,7 +128,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   /** Analyze base-track sources missing from the index. Returns how many. */
   const analyzeMissing = useCallback(
     async (p: Project, signal?: AbortSignal) => {
-      const ids = [...new Set(primaryTrack(p).clips.map((c) => c.sourceId))].filter(
+      // Timeline videos first, then library (B-roll) videos.
+      const onTimeline = primaryTrack(p).clips.map((c) => c.sourceId);
+      const library = p.sources.filter((s) => s.kind !== 'audio').map((s) => s.id);
+      const ids = [...new Set([...onTimeline, ...library])].filter(
         (id) => !indexRef.current.some((i) => i.sourceId === id && i.words),
       );
       const done: SourceIndex[] = [];
@@ -177,6 +208,34 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         summary: `${targets.length} clip(s) llenan el cuadro${tracked ? `; ${tracked} siguen a la persona` : ' (sin caras detectadas: centrado)'}`,
       };
     },
+    sync_cuts_to_music: async (project, input) => {
+      const music =
+        project.music.find((m) => m.id === input.music_id) ?? project.music[0];
+      if (!music) throw new Error('No hay música de fondo: añade una primero (set_music).');
+      const uri = resolveUri(music.sourceId);
+      if (!uri) throw new Error('No se encontró el archivo de la música.');
+      const samples = await decodeMono(uri, music.inPoint, music.outPoint);
+      // decodeMono starts at inPoint; beatsOnTimeline expects source seconds.
+      const beats = detectBeats(samples, ANALYSIS_RATE).map((b) => b + music.inPoint);
+      const onTimeline = beatsOnTimeline(beats, music, totalDuration(project));
+      const next = snapCutsToBeats(project, onTimeline);
+      const clips = primaryTrack(project).clips;
+      const moved = primaryTrack(next).clips.filter(
+        (c, i) => Math.abs(c.outPoint - clips[i].outPoint) > 0.001,
+      ).length;
+      return {
+        project: next,
+        summary: beats.length
+          ? `${beats.length} golpes detectados; ${moved} corte(s) movidos al ritmo`
+          : 'No se detectó un ritmo claro en la música',
+      };
+    },
+    remember: async (project, input) => {
+      const pref = String(input.preference ?? '').trim();
+      if (!pref) throw new Error('Preferencia vacía.');
+      if (!memoryRef.current.includes(pref)) setMemory([...memoryRef.current, pref].slice(-20));
+      return { project, summary: `Recordaré: ${pref}` };
+    },
     generate_captions: async (project, input, signal) => {
       // Reuse the analysis transcript when every clip has one (instant).
       const words = timelineWords(project, indexRef.current);
@@ -226,7 +285,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           userText: note ? `(${note}) ${trimmed}` : trimmed,
           project: before,
           describe: (p) =>
-            describeProject(p, { playhead: clockTime(), selection, index: indexRef.current }),
+            describeProject(p, {
+              playhead: clockTime(),
+              selection,
+              index: indexRef.current,
+              memory: memoryRef.current,
+            }),
           send: sendTurn,
           deviceTools,
           commit: (p) => commitProject(p, key),
@@ -313,6 +377,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         index,
         suggestions,
         analyze,
+        memory,
+        forget,
       }}
     >
       {children}

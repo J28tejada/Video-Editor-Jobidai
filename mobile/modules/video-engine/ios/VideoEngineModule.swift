@@ -82,6 +82,11 @@ public class VideoEngineModule: Module {
       return results
     }
 
+    AsyncFunction("extractAudioAsync") {
+      (uri: String, startSec: Double, endSec: Double, sampleRate: Double) async throws -> String in
+      try await AudioExtractor.extract(uri: uri, start: startSec, end: endSec, sampleRate: sampleRate)
+    }
+
     AsyncFunction("exportAsync") { (json: String, shortSide: Double) async throws -> [String: Any] in
       guard self.exportSession == nil else { throw ExportInProgressException() }
       let spec = try EngineComposition.decode(json)

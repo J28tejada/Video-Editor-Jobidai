@@ -82,6 +82,13 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
           if (duration > 0) openSheet('audio');
         },
       },
+      {
+        icon: 'ai',
+        label: 'IA',
+        onPress: () => {
+          if (duration > 0) openSheet('ai');
+        },
+      },
       { icon: 'format', label: 'Formato', onPress: () => openSheet('format') },
     ];
   }

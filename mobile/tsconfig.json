@@ -11,6 +11,9 @@
       ],
       "@audio/*": [
         "../src/core/audio/*"
+      ],
+      "@ai/*": [
+        "../src/core/ai/*"
       ]
     }
   },

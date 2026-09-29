@@ -7,16 +7,11 @@
  */
 import type { Project } from '../timeline/types';
 import { buildTimelineAudioBuffer } from '../media/audioTimeline';
-import type { WordChunk } from './whisper.worker';
+import { groupWords, type CaptionSegment, type WordChunk } from './captionLines';
+
+export type { CaptionSegment };
 
 const WHISPER_RATE = 16000;
-
-export type CaptionSegment = {
-  text: string;
-  startSec: number;
-  endSec: number;
-  words: WordChunk[];
-};
 
 export type SubtitleProgress = {
   stage: 'audio' | 'model' | 'inference' | 'done';
@@ -46,38 +41,6 @@ async function toWhisperAudio(project: Project): Promise<Float32Array | null> {
   src.start();
   const rendered = await ctx.startRendering();
   return rendered.getChannelData(0).slice();
-}
-
-/** Group word chunks into short caption lines. */
-function groupWords(words: WordChunk[]): CaptionSegment[] {
-  const MAX_CHARS = 28;
-  const MAX_DURATION = 2.5;
-  const segments: CaptionSegment[] = [];
-
-  let buffer: WordChunk[] = [];
-  const flush = () => {
-    if (buffer.length === 0) return;
-    segments.push({
-      text: buffer.map((w) => w.text).join(' ').replace(/\s+([,.!?])/g, '$1'),
-      startSec: buffer[0].start,
-      endSec: buffer[buffer.length - 1].end,
-      words: buffer,
-    });
-    buffer = [];
-  };
-
-  for (const word of words) {
-    const tentative = [...buffer, word];
-    const text = tentative.map((w) => w.text).join(' ');
-    const duration = word.end - tentative[0].start;
-    buffer.push(word);
-    const endsSentence = /[.!?]$/.test(word.text);
-    if (text.length >= MAX_CHARS || duration >= MAX_DURATION || endsSentence) {
-      flush();
-    }
-  }
-  flush();
-  return segments;
 }
 
 export async function generateSubtitles(

@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEditor } from '../editor/EditorContext';
 import { Icon } from '../ui/Icon';
 import { colors, radius } from '../ui/theme';
+import { AiSheet } from './AiSheet';
 import { AudioAddSheet, MusicSheet, SfxSheet } from './AudioSheets';
 import { ClipSheets, FormatSheet, TextSheet, type SheetKind } from './EditSheets';
 import { ExportSheet } from './ExportSheet';
@@ -66,6 +67,7 @@ export function EditorScreen() {
       <FilterSheet open={sheet} onClose={close} />
       <ZoomSheet open={sheet} onClose={close} />
       <TransitionSheet open={sheet} onClose={close} />
+      <AiSheet open={sheet} onClose={close} />
     </SafeAreaView>
   );
 }

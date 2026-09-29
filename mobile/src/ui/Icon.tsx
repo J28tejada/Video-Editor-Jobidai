@@ -28,6 +28,7 @@ const ICONS = {
   filters: { ios: 'camera.filters', android: 'filter_vintage' },
   zoom: { ios: 'plus.magnifyingglass', android: 'zoom_in' },
   transition: { ios: 'square.split.2x1', android: 'compare' },
+  ai: { ios: 'sparkles', android: 'auto_awesome' },
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "buffer": "^6.0.3",
     "expo": "~57.0.25",
     "expo-constants": "~57.0.19",
     "expo-dev-client": "~57.0.19",
@@ -23,7 +24,8 @@
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.26.0",
+    "whisper.rn": "^0.7.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

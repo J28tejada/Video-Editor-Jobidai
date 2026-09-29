@@ -11,6 +11,12 @@ declare class VideoEngineModule extends NativeModule<VideoEngineModuleEvents> {
    * not be decoded).
    */
   generateThumbnailsAsync(uri: string, times: number[], maxSize: number): Promise<string[]>;
+  /**
+   * Decode [startSec, endSec] of a file's audio to raw mono float32 PCM
+   * (little-endian) at `sampleRate` in the cache dir; returns its file:// URI.
+   * Files without audio yield an empty file.
+   */
+  extractAudioAsync(uri: string, startSec: number, endSec: number, sampleRate: number): Promise<string>;
   /** Render and encode the composition (JSON) to an MP4 in the cache dir. */
   exportAsync(composition: string, shortSide: number): Promise<ExportResult>;
   /** Cancel an in-flight export; the export promise rejects. */

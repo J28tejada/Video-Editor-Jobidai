@@ -37,6 +37,10 @@ class VideoEngineModule : Module() {
       thumbnails(uri, times, maxSize.toInt().coerceAtLeast(16))
     }
 
+    AsyncFunction("extractAudioAsync") { uri: String, startSec: Double, endSec: Double, sampleRate: Int ->
+      AudioExtractor.extract(context, uri, startSec, endSec, sampleRate)
+    }
+
     AsyncFunction("exportAsync") { json: String, shortSide: Double, promise: Promise ->
       if (exporter?.isRunning == true) {
         promise.reject(ExportInProgressException())

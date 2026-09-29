@@ -29,7 +29,10 @@ import {
   removeMusic,
   removeOverlay,
   removeSfx,
+  applySilenceCuts,
+  patchAllCaptions,
   removeTransition,
+  setCaptionOverlays,
   setClipFilters,
   setClipFiltersAll,
   setClipTransform,
@@ -68,6 +71,8 @@ import {
   type ImportedMedia,
   type MediaFiles,
 } from '../media/mediaLibrary';
+import { generateCaptions, type CaptionOptions } from '../ai/captions';
+import { analyzeSilences, type SilenceOptions } from '../ai/silences';
 import { loadState, saveState } from './persistence';
 
 export type Selection = {
@@ -125,6 +130,16 @@ type EditorValue = {
   /** Select the transition after a clip, creating a crossfade if none. */
   openTransitionAfter: (clipId: string) => void;
   patchTransition: (id: string, patch: Partial<Transition>) => void;
+
+  /** Jump-cut silences on the base track. Returns what was removed. */
+  removeSilences: (
+    opts: SilenceOptions,
+    onProgress?: (fraction: number) => void,
+  ) => Promise<{ removedSec: number; removedCount: number }>;
+  /** Restyle every auto-caption at once (size, color, background, position). */
+  patchCaptionStyle: (patch: Partial<TextOverlay>) => void;
+  /** Replace auto-captions with a fresh Whisper transcription. Returns line count. */
+  autoCaptions: (opts: CaptionOptions) => Promise<number>;
 
   engineRef: RefObject<VideoEngineViewRef | null>;
   isPlaying: boolean;
@@ -456,6 +471,37 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [apply],
   );
 
+  // ---- On-device AI ----
+
+  const removeSilences = useCallback(
+    async (opts: SilenceOptions, onProgress?: (fraction: number) => void) => {
+      pause();
+      const result = await analyzeSilences(project, resolveUri, opts, onProgress);
+      if (result.cuts.length > 0) {
+        apply((p) => applySilenceCuts(p, result.cuts));
+        setSelection(null);
+      }
+      return { removedSec: result.removedSec, removedCount: result.removedCount };
+    },
+    [apply, pause, project, resolveUri],
+  );
+
+  const patchCaptionStyle = useCallback(
+    (patch: Partial<TextOverlay>) =>
+      apply((p) => patchAllCaptions(p, patch), `captions:${Object.keys(patch).join(',')}`),
+    [apply],
+  );
+
+  const autoCaptions = useCallback(
+    async (opts: CaptionOptions) => {
+      pause();
+      const lines = await generateCaptions(project, resolveUri, opts);
+      apply((p) => setCaptionOverlays(p, lines));
+      return lines.length;
+    },
+    [apply, pause, project, resolveUri],
+  );
+
   const newProject = useCallback(() => {
     pause();
     setSelection(null);
@@ -499,6 +545,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setZoom,
     openTransitionAfter,
     patchTransition,
+    removeSilences,
+    patchCaptionStyle,
+    autoCaptions,
     engineRef,
     isPlaying,
     setIsPlaying,

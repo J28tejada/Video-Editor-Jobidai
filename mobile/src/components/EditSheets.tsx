@@ -2,7 +2,7 @@
 import { StyleSheet, TextInput } from 'react-native';
 
 import { findClip } from '@timeline/project';
-import { clipGain, clipSpeed } from '@timeline/types';
+import { clipGain, clipSpeed, type TextOverlay } from '@timeline/types';
 import { useEditor } from '../editor/EditorContext';
 import { colors, radius } from '../ui/theme';
 import { Chips, Label, Sheet } from './Sheet';
@@ -20,6 +20,7 @@ export type SheetKind =
   | 'filters'
   | 'zoom'
   | 'transition'
+  | 'ai'
   | null;
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
@@ -74,13 +75,16 @@ const POSITIONS = [
 const DURATIONS = [2, 3, 5, 8];
 
 export function TextSheet({ open, onClose }: { open: SheetKind; onClose: () => void }) {
-  const { project, selection, patchText, duration } = useEditor();
+  const { project, selection, patchText, patchCaptionStyle, duration } = useEditor();
   const overlay =
     selection?.kind === 'text' ? project.overlays.find((o) => o.id === selection.id) : undefined;
   if (!overlay) return null;
   const len = +(overlay.endSec - overlay.startSec).toFixed(1);
+  // Style edits on an auto-caption restyle every caption at once.
+  const style = (patch: Partial<TextOverlay>) =>
+    overlay.isCaption ? patchCaptionStyle(patch) : patchText(overlay.id, patch);
   return (
-    <Sheet title="Texto" visible={open === 'text'} onClose={onClose}>
+    <Sheet title={overlay.isCaption ? 'Subtítulo' : 'Texto'} visible={open === 'text'} onClose={onClose}>
       <TextInput
         value={overlay.text}
         onChangeText={(text) => patchText(overlay.id, { text })}
@@ -93,13 +97,13 @@ export function TextSheet({ open, onClose }: { open: SheetKind; onClose: () => v
       <Chips
         options={TEXT_SIZES}
         value={TEXT_SIZES.find((s) => Math.abs(s.value - overlay.fontSizeNorm) < 0.005)?.value ?? null}
-        onChange={(fontSizeNorm) => patchText(overlay.id, { fontSizeNorm })}
+        onChange={(fontSizeNorm) => style({ fontSizeNorm })}
       />
       <Label>Color</Label>
       <Chips
         options={TEXT_COLORS.map((c) => ({ label: c, value: c, swatch: c }))}
         value={overlay.color}
-        onChange={(color) => patchText(overlay.id, { color })}
+        onChange={(color) => style({ color })}
       />
       <Label>Fondo</Label>
       <Chips
@@ -109,13 +113,13 @@ export function TextSheet({ open, onClose }: { open: SheetKind; onClose: () => v
           { label: 'Claro', value: 'rgba(255,255,255,0.85)' },
         ]}
         value={overlay.background ?? 'none'}
-        onChange={(bg) => patchText(overlay.id, { background: bg === 'none' ? null : bg })}
+        onChange={(bg) => style({ background: bg === 'none' ? null : bg })}
       />
       <Label>Posición</Label>
       <Chips
         options={POSITIONS}
         value={POSITIONS.find((p) => Math.abs(p.value - overlay.yNorm) < 0.02)?.value ?? null}
-        onChange={(yNorm) => patchText(overlay.id, { yNorm, xNorm: 0.5 })}
+        onChange={(yNorm) => style({ yNorm, xNorm: 0.5 })}
       />
       <Label>Duración</Label>
       <Chips

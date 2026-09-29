@@ -14,6 +14,7 @@ import { FilterSheet, TransitionSheet, ZoomSheet } from './LookSheets';
 import { Preview } from './Preview';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
+import { TranscriptSheet } from './TranscriptSheet';
 import { Transport } from './Transport';
 
 export function EditorScreen() {
@@ -72,6 +73,7 @@ export function EditorScreen() {
       <ZoomSheet open={sheet} onClose={close} />
       <TransitionSheet open={sheet} onClose={close} />
       <AiSheet open={sheet} onClose={close} />
+      <TranscriptSheet open={sheet} onClose={close} />
     </SafeAreaView>
   );
 }

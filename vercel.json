@@ -21,6 +21,9 @@
   "functions": {
     "api/agent.ts": {
       "maxDuration": 60
+    },
+    "api/describe.ts": {
+      "maxDuration": 60
     }
   }
 }

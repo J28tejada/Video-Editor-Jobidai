@@ -41,6 +41,30 @@ runAgent(): ejecuta las herramientas ◄──┘◄── contenido del asisten
 - El contenido del asistente se devuelve y se reenvía sin modificar (los
   bloques de razonamiento deben volver intactos).
 
+## Comprensión del material (A2)
+
+Cada video del timeline se puede analizar (botón *Analizar mis videos*, la
+herramienta `analyze_media` del agente, o al abrir *Texto a video*). El
+resultado se guarda en el teléfono (`analysis.json`) por fuente y en segundos
+de la fuente, así sigue siendo válido después de cualquier corte:
+
+| Dato | Cómo se obtiene | Dónde corre |
+| --- | --- | --- |
+| Transcripción con tiempo por palabra | Whisper (whisper.cpp) sobre todo el audio | Teléfono |
+| Cambios de plano | Diferencia de histograma y luminancia entre fotogramas diminutos (`measureShotChangesAsync`) | Teléfono (nativo) |
+| Qué muestra cada plano | Un fotograma de 256 px por plano (máx. 12 por video) → `/api/describe` con Claude Haiku 4.5 y salida estructurada | Backend |
+
+Con eso:
+- el agente recibe la transcripción (en segundos del timeline) y los planos
+  descritos en su contexto, y puede cortar por contenido;
+- **Texto a video**: la transcripción como texto; tocar palabras y borrarlas
+  corta el video (`cutSourceRanges`);
+- **Muletillas** ("eh", "um", "o sea", palabras repetidas): herramienta
+  `remove_filler_words` y botón en *Texto a video*;
+- **Sugerencias** calculadas (`suggestEdits`): muletillas, pausas largas,
+  inicio lento, falta de subtítulos, formato, duración;
+- los subtítulos reutilizan la transcripción ya hecha (instantáneos).
+
 ## Configuración
 
 ### Backend (Vercel, mismo proyecto que la web)

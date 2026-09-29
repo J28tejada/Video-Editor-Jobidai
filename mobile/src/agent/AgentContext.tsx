@@ -2,16 +2,28 @@
  * The editing agent in the app: conversation state, the loop runner wired to
  * the editor, device tools (captions, silences) and undoable change cards.
  */
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { describeProject, type SourceIndex } from '@agent/context';
 import { runAgent, type AgentEvent, type DeviceTool } from '@agent/loop';
 import type { AgentMessage } from '@agent/protocol';
-import { applySilenceCuts, setCaptionOverlays } from '@timeline/project';
+import { groupWords } from '@ai/captionLines';
+import { suggestEdits, timelineWords, type Suggestion } from '@agent/understanding';
+import { applySilenceCuts, primaryTrack, setCaptionOverlays } from '@timeline/project';
 import type { Project } from '@timeline/types';
 import { generateCaptions } from '../ai/captions';
 import { analyzeSilences, DEFAULT_SILENCE_OPTIONS, type SilenceOptions } from '../ai/silences';
 import { isModelDownloaded } from '../ai/whisperModel';
+import { analyzeSource } from '../analysis/analyze';
+import { loadIndex, saveIndex } from '../analysis/indexStore';
 import { useEditor } from '../editor/EditorContext';
 import { clockTime } from '../engine/playbackClock';
 import { sendTurn } from './client';
@@ -32,8 +44,12 @@ type AgentValue = {
   cancel: () => void;
   undoCard: (id: string) => void;
   reset: () => void;
-  /** Analysis results used as context (filled by the understanding layer). */
-  setIndex: (index: SourceIndex[]) => void;
+  /** Understanding index (transcripts, shots) per source. */
+  index: SourceIndex[];
+  /** Data-backed suggestions for the current project. */
+  suggestions: Suggestion[];
+  /** Analyze the timeline's sources that aren't analyzed yet. */
+  analyze: () => Promise<void>;
 };
 
 const AgentContext = createContext<AgentValue | null>(null);
@@ -47,17 +63,57 @@ const INTENSITY: Record<string, SilenceOptions> = {
 const TOOL_LABELS: Record<string, string> = {
   generate_captions: 'Transcribiendo el audio…',
   remove_silences: 'Buscando silencios…',
+  analyze_media: 'Analizando tus videos…',
 };
 
 let seq = 0;
 const nextId = () => `e${Date.now().toString(36)}${seq++}`;
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const { getProject, commitProject, selection, resolveUri, pause } = useEditor();
+  const { project, getProject, commitProject, selection, resolveUri, pause } = useEditor();
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [index, setIndexState] = useState<SourceIndex[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const history = useRef<AgentMessage[]>([]);
   const indexRef = useRef<SourceIndex[]>([]);
+
+  useEffect(() => {
+    loadIndex().then((loaded) => {
+      indexRef.current = loaded;
+      setIndexState(loaded);
+    });
+  }, []);
+
+  const updateIndex = useCallback((entries: SourceIndex[]) => {
+    const merged = [
+      ...indexRef.current.filter((i) => !entries.some((e) => e.sourceId === i.sourceId)),
+      ...entries,
+    ];
+    indexRef.current = merged;
+    setIndexState(merged);
+    saveIndex(merged);
+  }, []);
+
+  /** Analyze base-track sources missing from the index. Returns how many. */
+  const analyzeMissing = useCallback(
+    async (p: Project, signal?: AbortSignal) => {
+      const ids = [...new Set(primaryTrack(p).clips.map((c) => c.sourceId))].filter(
+        (id) => !indexRef.current.some((i) => i.sourceId === id && i.words),
+      );
+      const done: SourceIndex[] = [];
+      for (const id of ids) {
+        const source = p.sources.find((x) => x.id === id);
+        const uri = resolveUri(id);
+        if (!source || !uri) continue;
+        done.push(
+          await analyzeSource(source, uri, { language: 'auto', signal, onProgress: setStatus }),
+        );
+        updateIndex(done.slice(-1));
+      }
+      return done.length;
+    },
+    [resolveUri, updateIndex],
+  );
   const abortRef = useRef<AbortController | null>(null);
   /** Context for the model about things that happened outside the chat. */
   const noteRef = useRef('');
@@ -73,7 +129,26 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         summary: `${r.removedCount} cortes, ${r.removedSec.toFixed(1)} s de silencio quitados`,
       };
     },
+    analyze_media: async (project, _input, signal) => {
+      const n = await analyzeMissing(project, signal);
+      const words = timelineWords(project, indexRef.current).length;
+      return {
+        project,
+        summary: n
+          ? `${n} video(s) analizados: ${words} palabras transcritas y planos detectados`
+          : 'Los videos ya estaban analizados',
+      };
+    },
     generate_captions: async (project, input, signal) => {
+      // Reuse the analysis transcript when every clip has one (instant).
+      const words = timelineWords(project, indexRef.current);
+      const covered = primaryTrack(project).clips.every((c) =>
+        indexRef.current.some((i) => i.sourceId === c.sourceId && i.words),
+      );
+      if (covered && words.length) {
+        const lines = groupWords(words.map((w) => ({ text: w.text, start: w.start, end: w.end })));
+        return { project: setCaptionOverlays(project, lines), summary: `${lines.length} líneas de subtítulos` };
+      }
       const lines = await generateCaptions(project, resolveUri, {
         model: isModelDownloaded('small') ? 'small' : 'base',
         language: typeof input.language === 'string' ? input.language : 'es',
@@ -117,6 +192,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           send: sendTurn,
           deviceTools,
           commit: (p) => commitProject(p, key),
+          getIndex: () => indexRef.current,
           signal: ctrl.signal,
           onEvent: (e: AgentEvent) => {
             if (e.type === 'thinking') setStatus('Pensando…');
@@ -164,13 +240,42 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setLog([]);
   }, []);
 
-  const setIndex = useCallback((index: SourceIndex[]) => {
-    indexRef.current = index;
-  }, []);
+  const analyze = useCallback(async () => {
+    if (status) return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setStatus('Analizando tus videos…');
+    try {
+      const n = await analyzeMissing(getProject(), ctrl.signal);
+      push({
+        kind: 'assistant',
+        id: nextId(),
+        text: n ? `Analicé ${n} video(s). Ya puedo editar por lo que se dice y por lo que se ve.` : 'Tus videos ya estaban analizados.',
+      });
+    } catch (e) {
+      push({ kind: 'error', id: nextId(), text: ctrl.signal.aborted ? 'Cancelado.' : (e as Error).message });
+    } finally {
+      abortRef.current = null;
+      setStatus(null);
+    }
+  }, [status, analyzeMissing, getProject]);
+
+  const suggestions = suggestEdits(project, index);
 
   return (
     <AgentContext.Provider
-      value={{ configured: agentConfigured(), log, status, run, cancel, undoCard, reset, setIndex }}
+      value={{
+        configured: agentConfigured(),
+        log,
+        status,
+        run,
+        cancel,
+        undoCard,
+        reset,
+        index,
+        suggestions,
+        analyze,
+      }}
     >
       {children}
     </AgentContext.Provider>

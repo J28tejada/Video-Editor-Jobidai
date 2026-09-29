@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 
 import { handleAgent, echoable } from '../api/_lib/agent';
+import { handleDescribe } from '../api/_lib/describe';
+import { detectShots, findFillers, longPauses, suggestEdits, timelineWords } from '../src/core/agent/understanding';
 import { describeProject } from '../src/core/agent/context';
 import { cutSourceRanges, deleteRange, keepRanges } from '../src/core/agent/editOps';
 import { executeTool } from '../src/core/agent/execute';
@@ -159,6 +161,54 @@ await test('project description lists ids and transcript', () => {
   assert.ok(text.includes('Selección: clip'));
 });
 
+// ---- understanding ----
+
+const words = (list: [string, number, number][]) => list.map(([text, start, end]) => ({ text, start, end }));
+const INDEX = [
+  {
+    sourceId: 'srcA',
+    words: words([
+      ['Hola,', 2.0, 2.3], ['eh,', 2.4, 2.6], ['que', 2.7, 2.8], ['que', 2.85, 3.0], ['tal', 3.1, 3.3],
+      ['o', 3.4, 3.5], ['sea', 3.5, 3.7], ['bien.', 3.8, 4.1], ['Siguiente', 6.0, 6.5],
+    ]),
+  },
+];
+
+await test('timeline words follow speed and clip placement', () => {
+  const p = run(sample(), 'set_speed', { clip_ids: ['all'], speed: 2 });
+  const w = timelineWords(p, INDEX);
+  assert.equal(w.length, 9);
+  assert.ok(near(w[0].start, 1.0));
+});
+
+await test('fillers: "eh", stutter and "o sea"', () => {
+  const cuts = findFillers(timelineWords(sample(), INDEX));
+  assert.equal(cuts.length, 3);
+  assert.deepEqual(cuts.map((c) => [c.start, c.end]), [[2.4, 2.6], [2.7, 2.8], [3.4, 3.7]]);
+});
+
+await test('remove_filler_words tool cuts them; errors without transcript', () => {
+  const r = executeTool(sample(), { name: 'remove_filler_words', input: {} }, { index: INDEX });
+  assert.ok(r.ok && near(totalDuration(r.project), 16 - 0.2 - 0.1 - 0.3));
+  const none = executeTool(sample(), { name: 'remove_filler_words', input: {} }, {});
+  assert.equal(none.ok, false);
+});
+
+await test('long pauses and suggestions', () => {
+  const w = timelineWords(sample(), INDEX);
+  assert.equal(longPauses(w).length, 1);
+  const ids = suggestEdits(sample(), INDEX).map((x) => x.id);
+  for (const id of ['fillers', 'pauses', 'hook', 'captions']) assert.ok(ids.includes(id), id);
+  assert.ok(suggestEdits(sample(), []).some((x) => x.id === 'analyze'));
+});
+
+await test('shot detection from frame-difference scores', () => {
+  const times = Array.from({ length: 20 }, (_, i) => i * 0.5);
+  const scores = times.map((t) => (t === 3 || t === 7 ? 0.8 : 0.03));
+  const shots = detectShots(times, scores, 10);
+  assert.deepEqual(shots.map((x) => [x.start, x.end]), [[0, 3], [3, 7], [7, 10]]);
+});
+
 // ---- loop ----
 
 await test('loop: tool round then reply; history alternates; device tool runs', async () => {
@@ -285,6 +335,21 @@ await test('backend: echoable drops pre-fallback reasoning and tool calls', () =
     { type: 'tool_use', id: 'b' },
   ]);
   assert.deepEqual(out.map((b) => b.type), ['text', 'thinking', 'tool_use']);
+});
+
+await test('describe: returns parsed descriptions; validates frames', async () => {
+  const fake = {
+    messages: {
+      parse: async (params: { model: string }) => {
+        assert.equal(params.model, 'claude-haiku-4-5');
+        return { parsed_output: { frames: [{ id: 'f1', description: 'Persona hablando a cámara' }] } };
+      },
+    },
+  } as never;
+  const res = await handleDescribe(fake, post({ frames: [{ id: 'f1', jpegBase64: 'AAAA' }] }), {});
+  assert.equal(res.status, 200);
+  assert.equal(((await res.json()) as { frames: { id: string }[] }).frames[0].id, 'f1');
+  assert.equal((await handleDescribe(fake, post({ frames: [] }), {})).status, 400);
 });
 
 let failed = 0;

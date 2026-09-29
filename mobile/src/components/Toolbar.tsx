@@ -83,6 +83,13 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
         },
       },
       {
+        icon: 'transcript',
+        label: 'Texto a video',
+        onPress: () => {
+          if (duration > 0) openSheet('transcript');
+        },
+      },
+      {
         icon: 'ai',
         label: 'IA',
         onPress: () => {

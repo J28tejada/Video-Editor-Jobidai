@@ -29,6 +29,7 @@ const ICONS = {
   zoom: { ios: 'plus.magnifyingglass', android: 'zoom_in' },
   transition: { ios: 'square.split.2x1', android: 'compare' },
   ai: { ios: 'sparkles', android: 'auto_awesome' },
+  transcript: { ios: 'text.quote', android: 'notes' },
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -90,3 +90,46 @@ function throwIfAborted(signal?: AbortSignal) {
     throw e;
   }
 }
+
+/**
+ * Transcribe a whole source file (for the understanding index). Word times
+ * are in source seconds, so they stay valid through any later edit.
+ */
+export async function transcribeSource(
+  uri: string,
+  durationSec: number,
+  opts: CaptionOptions,
+): Promise<{ text: string; start: number; end: number }[]> {
+  const { onProgress, signal } = opts;
+  await ensureModel(opts.model, (value) => onProgress?.({ stage: 'download', value }), signal);
+  onProgress?.({ stage: 'audio', value: 0 });
+  const samples = await decodeMono(uri, 0, durationSec);
+  throwIfAborted(signal);
+  if (samples.length === 0) return [];
+  const context = await whisperContext(opts.model);
+  const job = context.transcribeData(toPcm16(samples).buffer as ArrayBuffer, {
+    language: opts.language,
+    tokenTimestamps: true,
+    maxLen: 1,
+    onProgress: (value: number) => onProgress?.({ stage: 'transcribe', value: value / 100 }),
+  });
+  const abort = () => void job.stop();
+  signal?.addEventListener('abort', abort);
+  try {
+    const result = await job.promise;
+    throwIfAborted(signal);
+    if (result.isAborted) return [];
+    // Identity mapping: a single "clip" covering the source at 1×.
+    const identity = {
+      id: 'source',
+      kind: 'video',
+      sourceId: 'source',
+      inPoint: 0,
+      outPoint: durationSec,
+      startInTimeline: 0,
+    } as const;
+    return tokensToWords(result.segments, [{ clip: identity, offset: 0, length: samples.length }]);
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
+}

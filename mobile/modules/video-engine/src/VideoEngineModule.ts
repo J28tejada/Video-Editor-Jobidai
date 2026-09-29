@@ -17,6 +17,15 @@ declare class VideoEngineModule extends NativeModule<VideoEngineModuleEvents> {
    * Files without audio yield an empty file.
    */
   extractAudioAsync(uri: string, startSec: number, endSec: number, sampleRate: number): Promise<string>;
+  /**
+   * Frame-difference scores (0..1) sampled every `interval` s (at most
+   * `maxSamples` samples) for shot detection.
+   */
+  measureShotChangesAsync(
+    uri: string,
+    interval: number,
+    maxSamples: number,
+  ): Promise<{ times: number[]; scores: number[]; duration: number }>;
   /** Render and encode the composition (JSON) to an MP4 in the cache dir. */
   exportAsync(composition: string, shortSide: number): Promise<ExportResult>;
   /** Cancel an in-flight export; the export promise rejects. */

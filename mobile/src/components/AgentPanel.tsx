@@ -49,7 +49,7 @@ export function AgentBar({ onOpen }: { onOpen: () => void }) {
 }
 
 export function AgentPanel({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { configured, log, status, run, cancel, undoCard, reset } = useAgent();
+  const { configured, log, status, run, cancel, undoCard, reset, suggestions, analyze } = useAgent();
   const { duration } = useEditor();
   const [text, setText] = useState('');
   const insets = useSafeAreaInsets();
@@ -100,14 +100,18 @@ export function AgentPanel({ visible, onClose }: { visible: boolean; onClose: ()
                 Dime qué quieres y edito por ti. Puedes deshacer cada cambio.
               </Text>
               <View style={styles.suggestions}>
-                {SUGGESTIONS.map((s) => (
+                {(suggestions.length
+                  ? suggestions
+                  : SUGGESTIONS.map((t) => ({ id: t, label: t, prompt: t }))
+                ).map((sug) => (
                   <Pressable
-                    key={s}
+                    key={sug.id}
                     style={[styles.chip, duration <= 0 && { opacity: 0.4 }]}
                     disabled={duration <= 0 || !!status}
-                    onPress={() => submit(s)}
+                    // Analysis runs on the phone; no need to ask the model.
+                    onPress={() => (sug.id === 'analyze' ? analyze() : submit(sug.prompt))}
                   >
-                    <Text style={styles.chipText}>{s}</Text>
+                    <Text style={styles.chipText}>{sug.label}</Text>
                   </Pressable>
                 ))}
               </View>

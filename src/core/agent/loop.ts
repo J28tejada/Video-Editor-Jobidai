@@ -7,6 +7,7 @@
  * and in tests.
  */
 import type { Project } from '../timeline/types';
+import type { SourceIndex } from './context';
 import { executeTool } from './execute';
 import type { AgentMessage, AgentResponse, ContentBlock } from './protocol';
 
@@ -36,6 +37,8 @@ export type RunOptions = {
   onEvent?: (e: AgentEvent) => void;
   signal?: AbortSignal;
   maxRounds?: number;
+  /** Current analysis (read on every tool call; device tools may update it). */
+  getIndex?: () => SourceIndex[];
 };
 
 export type RunResult = {
@@ -116,7 +119,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         }
         continue;
       }
-      const out = executeTool(project, { name: call.name, input: call.input });
+      const out = executeTool(project, { name: call.name, input: call.input }, { index: opts.getIndex?.() });
       if (out.ok) {
         project = out.project;
         changed = true;

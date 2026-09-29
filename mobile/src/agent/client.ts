@@ -21,3 +21,25 @@ export const sendTurn: SendTurn = async (messages, signal) => {
   if (!res.ok || !data) throw new Error(data?.error ?? `Error del asistente (${res.status}).`);
   return data;
 };
+
+/** Short descriptions of keyframes (/api/describe). */
+export async function describeFrames(
+  frames: { id: string; jpegBase64: string }[],
+  signal?: AbortSignal,
+): Promise<{ id: string; description: string }[]> {
+  if (!AGENT_URL) return [];
+  const res = await fetch(`${AGENT_URL}/api/describe`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(AGENT_KEY ? { 'x-app-key': AGENT_KEY } : {}),
+    },
+    body: JSON.stringify({ frames, language: 'es' }),
+    signal,
+  });
+  const data = (await res.json().catch(() => null)) as
+    | { frames?: { id: string; description: string }[]; error?: string }
+    | null;
+  if (!res.ok || !data?.frames) throw new Error(data?.error ?? `Error al describir (${res.status}).`);
+  return data.frames;
+}

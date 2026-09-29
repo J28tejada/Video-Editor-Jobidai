@@ -41,6 +41,10 @@ class VideoEngineModule : Module() {
       AudioExtractor.extract(context, uri, startSec, endSec, sampleRate)
     }
 
+    AsyncFunction("measureShotChangesAsync") { uri: String, interval: Double, maxSamples: Int ->
+      ShotAnalyzer.measure(context, uri, interval, maxSamples)
+    }
+
     AsyncFunction("exportAsync") { json: String, shortSide: Double, promise: Promise ->
       if (exporter?.isRunning == true) {
         promise.reject(ExportInProgressException())

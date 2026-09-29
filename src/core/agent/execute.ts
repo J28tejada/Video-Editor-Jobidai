@@ -35,7 +35,9 @@ import {
 } from '../timeline/project';
 import type { ClipFilters, Project, TextOverlay } from '../timeline/types';
 import { synthDuration } from '../audio/sfxList';
-import { deleteRange } from './editOps';
+import type { SourceIndex } from './context';
+import { cutSourceRanges, deleteRange } from './editOps';
+import { findFillers, timelineWords } from './understanding';
 
 export type ToolCall = { name: string; input: unknown };
 
@@ -69,12 +71,15 @@ const ASPECTS: Record<string, [number, number]> = {
   '16:9': [1920, 1080],
 };
 
-export function executeTool(project: Project, call: ToolCall): ToolOutcome {
+/** Extra data some tools need (e.g. transcripts for filler removal). */
+export type ExecContext = { index?: SourceIndex[] };
+
+export function executeTool(project: Project, call: ToolCall, ctx: ExecContext = {}): ToolOutcome {
   try {
     const input = (call.input && typeof call.input === 'object' ? call.input : {}) as Input;
     const run = HANDLERS[call.name];
     if (!run) return { ok: false, error: `Unknown tool "${call.name}".` };
-    return run(project, input);
+    return run(project, input, ctx);
   } catch (e) {
     return { ok: false, error: e instanceof InputError ? e.message : `Failed: ${(e as Error).message}` };
   }
@@ -148,7 +153,16 @@ const s = (n: number) => `${Math.round(n * 10) / 10} s`;
 
 // ---- handlers ----
 
-const HANDLERS: Record<string, (p: Project, input: Input) => ToolOutcome> = {
+const HANDLERS: Record<string, (p: Project, input: Input, ctx: ExecContext) => ToolOutcome> = {
+  remove_filler_words(p, _input, ctx) {
+    const words = timelineWords(p, ctx.index ?? []);
+    if (words.length === 0) throw new InputError('No transcript yet: call analyze_media first.');
+    const cuts = findFillers(words);
+    if (cuts.length === 0) return ok(p, 'No se encontraron muletillas');
+    const next = cutSourceRanges(p, cuts);
+    return ok(next, `${cuts.length} muletilla(s) quitada(s) (${s(totalDuration(p) - totalDuration(next))})`);
+  },
+
   split_at(p, input) {
     const t = num(input, 'time', 0, totalDuration(p));
     const next = splitAt(p, t);

@@ -281,7 +281,19 @@ export const AGENT_TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'remove_filler_words',
+    description:
+      'Cut filler words ("eh", "um", "o sea"…) and stuttered repeats, using the transcript. Requires analyzed media.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'analyze_media',
+    description:
+      'Analyze the videos on the timeline (transcript with word timings, shot changes and what each shot shows). Slow; run it when you need the transcript or visual descriptions and they are missing.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
 ];
 
 /** Tools the app runs asynchronously on the device (not pure project edits). */
-export const DEVICE_TOOLS = new Set(['generate_captions', 'remove_silences']);
+export const DEVICE_TOOLS = new Set(['generate_captions', 'remove_silences', 'analyze_media']);

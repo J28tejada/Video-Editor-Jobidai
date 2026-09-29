@@ -16,9 +16,11 @@ import { describeProject, type SourceIndex } from '@agent/context';
 import { runAgent, type AgentEvent, type DeviceTool } from '@agent/loop';
 import type { AgentMessage } from '@agent/protocol';
 import { groupWords } from '@ai/captionLines';
+import { reframeKeys, setTransformKeys } from '@agent/editOps';
 import { suggestEdits, timelineWords, type Suggestion } from '@agent/understanding';
 import { applySilenceCuts, primaryTrack, setCaptionOverlays } from '@timeline/project';
 import type { Project } from '@timeline/types';
+import VideoEngine from '../../modules/video-engine';
 import { generateCaptions } from '../ai/captions';
 import { analyzeSilences, DEFAULT_SILENCE_OPTIONS, type SilenceOptions } from '../ai/silences';
 import { isModelDownloaded } from '../ai/whisperModel';
@@ -64,6 +66,7 @@ const TOOL_LABELS: Record<string, string> = {
   generate_captions: 'Transcribiendo el audio…',
   remove_silences: 'Buscando silencios…',
   analyze_media: 'Analizando tus videos…',
+  auto_reframe: 'Siguiendo a la persona en el cuadro…',
 };
 
 let seq = 0;
@@ -137,6 +140,41 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         summary: n
           ? `${n} video(s) analizados: ${words} palabras transcritas y planos detectados`
           : 'Los videos ya estaban analizados',
+      };
+    },
+    auto_reframe: async (project, input) => {
+      const all = primaryTrack(project).clips;
+      const wanted = Array.isArray(input.clip_ids) ? (input.clip_ids as string[]) : ['all'];
+      const targets = wanted.includes('all') ? all : all.filter((c) => wanted.includes(c.id));
+      if (targets.length === 0) throw new Error('No hay clips para reencuadrar.');
+      const zoom = typeof input.zoom === 'number' ? Math.min(2, Math.max(1, input.zoom)) : 1;
+      let next = project;
+      let tracked = 0;
+      for (const clip of targets) {
+        const source = project.sources.find((x) => x.id === clip.sourceId);
+        const uri = resolveUri(clip.sourceId);
+        if (!source || !uri) continue;
+        // Subjects are cached in the index by source time.
+        const known = indexRef.current.find((i) => i.sourceId === clip.sourceId)?.subjects ?? [];
+        const times: number[] = [];
+        const step = Math.max(0.5, (clip.outPoint - clip.inPoint) / 120);
+        for (let t = clip.inPoint; t <= clip.outPoint; t += step) {
+          if (!known.some((k) => Math.abs(k.t - t) < step / 2)) times.push(t);
+        }
+        const found = times.length ? await VideoEngine.detectFacesAsync(uri, times) : [];
+        const subjects = [...known, ...found].sort((a, b) => a.t - b.t);
+        const entry = indexRef.current.find((i) => i.sourceId === clip.sourceId) ?? { sourceId: clip.sourceId };
+        updateIndex([{ ...entry, subjects }]);
+        const keys = reframeKeys(
+          source.width, source.height, project.width, project.height,
+          clip.inPoint, clip.outPoint, subjects, zoom,
+        );
+        if (keys.length) tracked++;
+        next = setTransformKeys(next, clip.id, keys, 'cover');
+      }
+      return {
+        project: next,
+        summary: `${targets.length} clip(s) llenan el cuadro${tracked ? `; ${tracked} siguen a la persona` : ' (sin caras detectadas: centrado)'}`,
       };
     },
     generate_captions: async (project, input, signal) => {

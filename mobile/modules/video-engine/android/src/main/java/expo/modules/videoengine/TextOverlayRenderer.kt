@@ -14,14 +14,16 @@ import kotlin.math.min
 
 /** Draws text boxes with the same padding/box rules as the web compositor. */
 object TextPainter {
-  fun draw(canvas: Canvas, text: EngineText, width: Int, height: Int) {
+  fun draw(canvas: Canvas, text: EngineText, width: Int, height: Int, activeWord: Int = -1) {
     val fontPx = (text.fontSizeNorm * height).toFloat().coerceAtLeast(1f)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       color = parseColor(text.color)
       textSize = fontPx
       typeface = typefaceFor(text.fontWeight)
     }
-    val textWidth = paint.measureText(text.text)
+    val words = text.words.orEmpty()
+    val display = if (words.isEmpty()) text.text else words.joinToString(" ") { it.text }
+    val textWidth = paint.measureText(display)
     if (textWidth <= 0f) return
     val padX = fontPx * 0.35f
     val padY = fontPx * 0.25f
@@ -46,7 +48,20 @@ object TextPainter {
     // Vertically center the glyphs in the box.
     val fm = paint.fontMetrics
     val baseline = cy - (fm.ascent + fm.descent) / 2
-    canvas.drawText(text.text, left + padX, baseline, paint)
+    if (words.isEmpty() || activeWord < 0) {
+      canvas.drawText(display, left + padX, baseline, paint)
+      return
+    }
+    // Karaoke: draw word by word, the spoken one in the highlight color.
+    val space = paint.measureText(" ")
+    val base = paint.color
+    val highlight = parseColor(text.highlightColor ?: "#ffe600")
+    var x = left + padX
+    words.forEachIndexed { i, w ->
+      paint.color = if (i == activeWord) highlight else base
+      canvas.drawText(w.text, x, baseline, paint)
+      x += paint.measureText(w.text) + space
+    }
   }
 
   private fun typefaceFor(weight: Double): Typeface =
@@ -77,11 +92,12 @@ class TimedTextOverlay(
   override fun getBitmap(presentationTimeUs: Long): Bitmap {
     val t = presentationTimeUs / 1e6
     val active = texts.filter { t >= it.start && t < it.end }
-    val key = active.joinToString("|") { it.id }
+    val words = active.map { text -> text.words?.indexOfLast { t >= it.start } ?: -1 }
+    val key = active.indices.joinToString("|") { "${active[it].id}:${words[it]}" }
     if (key != cachedKey) {
       cachedKey = key
       bitmap.eraseColor(Color.TRANSPARENT)
-      for (text in active) TextPainter.draw(canvas, text, width, height)
+      active.forEachIndexed { i, text -> TextPainter.draw(canvas, text, width, height, words[i]) }
     }
     return bitmap
   }

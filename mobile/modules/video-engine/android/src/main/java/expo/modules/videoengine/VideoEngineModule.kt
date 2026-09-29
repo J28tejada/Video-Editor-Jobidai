@@ -45,6 +45,10 @@ class VideoEngineModule : Module() {
       ShotAnalyzer.measure(context, uri, interval, maxSamples)
     }
 
+    AsyncFunction("detectFacesAsync") { uri: String, times: List<Double> ->
+      FaceTracker.detect(context, uri, times)
+    }
+
     AsyncFunction("exportAsync") { json: String, shortSide: Double, promise: Promise ->
       if (exporter?.isRunning == true) {
         promise.reject(ExportInProgressException())

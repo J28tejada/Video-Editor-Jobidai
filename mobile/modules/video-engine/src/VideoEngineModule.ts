@@ -26,6 +26,8 @@ declare class VideoEngineModule extends NativeModule<VideoEngineModuleEvents> {
     interval: number,
     maxSamples: number,
   ): Promise<{ times: number[]; scores: number[]; duration: number }>;
+  /** Main face center (0..1, top-left) at source times; frames without a face are skipped. */
+  detectFacesAsync(uri: string, times: number[]): Promise<{ t: number; x: number; y: number }[]>;
   /** Render and encode the composition (JSON) to an MP4 in the cache dir. */
   exportAsync(composition: string, shortSide: number): Promise<ExportResult>;
   /** Cancel an in-flight export; the export promise rejects. */

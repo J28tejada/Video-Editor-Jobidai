@@ -18,6 +18,10 @@ data class EngineClip(
   val colorMatrix: DoubleArray?,
   /** Zoom / reframe after fitting, or null. */
   val transform: EngineTransform?,
+  /** Animated zoom / reframe keyed by source seconds, or null. */
+  val transformKeys: List<TransformKey>?,
+  val srcWidth: Double,
+  val srcHeight: Double,
 ) {
   /** Timeline duration of the clip (source range compressed by speed). */
   val duration: Double get() = (outPoint - inPoint) / speed
@@ -25,6 +29,10 @@ data class EngineClip(
 }
 
 data class EngineTransform(val scale: Double, val xNorm: Double, val yNorm: Double)
+
+data class TransformKey(val t: Double, val scale: Double, val xNorm: Double, val yNorm: Double)
+
+data class EngineWord(val text: String, val start: Double, val end: Double)
 
 /** Transition across the cut after clips[index], centered on the cut. */
 data class EngineTransition(val index: Int, val kind: String, val half: Double)
@@ -41,6 +49,8 @@ data class EngineText(
   val fontWeight: Double,
   val background: String?,
   val align: String,
+  val words: List<EngineWord>? = null,
+  val highlightColor: String? = null,
 )
 
 data class GainPoint(val t: Double, val gain: Double)
@@ -116,6 +126,14 @@ data class EngineComposition(
             transform = c.optJSONObject("transform")?.let { t ->
               EngineTransform(t.getDouble("scale"), t.getDouble("xNorm"), t.getDouble("yNorm"))
             },
+            transformKeys = c.optJSONArray("transformKeys")?.let { arr ->
+              (0 until arr.length()).map { k ->
+                val o = arr.getJSONObject(k)
+                TransformKey(o.getDouble("t"), o.getDouble("scale"), o.getDouble("xNorm"), o.getDouble("yNorm"))
+              }
+            },
+            srcWidth = c.optDouble("srcWidth", 0.0),
+            srcHeight = c.optDouble("srcHeight", 0.0),
           )
         }
       }
@@ -134,6 +152,13 @@ data class EngineComposition(
             fontWeight = t.optDouble("fontWeight", 700.0),
             background = if (t.isNull("background")) null else t.optString("background"),
             align = t.optString("align", "center"),
+            words = t.optJSONArray("words")?.let { arr ->
+              (0 until arr.length()).map { k ->
+                val w = arr.getJSONObject(k)
+                EngineWord(w.getString("text"), w.getDouble("start"), w.getDouble("end"))
+              }
+            },
+            highlightColor = if (t.isNull("highlightColor")) null else t.optString("highlightColor", "#ffe600"),
           )
         }
       } ?: emptyList()

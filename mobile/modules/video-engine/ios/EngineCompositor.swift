@@ -8,6 +8,45 @@ struct ClipLayer {
   let trackID: CMPersistentTrackID
   let transform: CGAffineTransform
   let colorMatrix: [Double]?
+  /// Present when the clip has animated zoom / reframe keys.
+  var animated: AnimatedPlacement? = nil
+
+  /// Placement at a composition time (static unless animated).
+  func placement(at time: Double) -> CGAffineTransform {
+    guard let a = animated else { return transform }
+    let source = a.inPoint + (time - a.start) * a.speed
+    let k = a.key(at: source)
+    return CompositionBuilder.placement(
+      natural: a.natural, preferred: a.preferred, render: a.render, cover: a.cover,
+      zoom: EngineTransform(scale: k.scale, xNorm: k.xNorm, yNorm: k.yNorm))
+  }
+}
+
+/// What a clip needs to recompute its placement every frame.
+struct AnimatedPlacement {
+  let natural: CGSize
+  let preferred: CGAffineTransform
+  let render: CGSize
+  let cover: Bool
+  let keys: [EngineTransformKey]
+  /// Composition time where the clip body starts, its source in-point and speed.
+  let start: Double
+  let inPoint: Double
+  let speed: Double
+
+  /// Linear interpolation over the keys; ends are held.
+  func key(at t: Double) -> (scale: Double, xNorm: Double, yNorm: Double) {
+    guard let first = keys.first, let last = keys.last else { return (1, 0.5, 0.5) }
+    if t <= first.t { return (first.scale, first.xNorm, first.yNorm) }
+    if t >= last.t { return (last.scale, last.xNorm, last.yNorm) }
+    for i in 1..<keys.count where t <= keys[i].t {
+      let a = keys[i - 1]
+      let b = keys[i]
+      let k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1
+      return (a.scale + (b.scale - a.scale) * k, a.xNorm + (b.xNorm - a.xNorm) * k, a.yNorm + (b.yNorm - a.yNorm) * k)
+    }
+    return (last.scale, last.xNorm, last.yNorm)
+  }
 }
 
 /// A span of the timeline showing one clip, or a transition between two.
@@ -135,7 +174,8 @@ final class EngineCompositor: NSObject, AVVideoCompositing {
     }
     let flipIn = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: image.extent.height)
     let flipOut = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: size.height)
-    return image.transformed(by: flipIn.concatenating(layer.transform).concatenating(flipOut))
+    let placement = layer.placement(at: request.compositionTime.seconds)
+    return image.transformed(by: flipIn.concatenating(placement).concatenating(flipOut))
       .cropped(to: CGRect(origin: .zero, size: size))
   }
 }

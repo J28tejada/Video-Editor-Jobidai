@@ -27,6 +27,7 @@ export function toEngineComposition(
   for (const clip of primaryTrack(project).clips) {
     const uri = resolveUri(clip.sourceId);
     if (!uri) continue;
+    const source = project.sources.find((x) => x.id === clip.sourceId);
     clips.push({
       id: clip.id,
       uri,
@@ -38,6 +39,9 @@ export function toEngineComposition(
       fit: clip.fit ?? 'contain',
       colorMatrix: filtersToMatrix(clip.filters),
       transform: isNeutral(clip.transform) ? null : clip.transform!,
+      transformKeys: clip.transformKeys?.length ? clip.transformKeys : null,
+      srcWidth: source?.width || project.width,
+      srcHeight: source?.height || project.height,
     });
     cursor += clipDuration(clip);
   }
@@ -73,6 +77,7 @@ export function toEngineComposition(
       fontWeight: o.fontWeight,
       background: o.background,
       align: o.align,
+      ...(o.words?.length ? { words: o.words, highlightColor: o.highlightColor ?? '#ffe600' } : {}),
     }));
   const audio = toEngineAudio(project, cursor, resolveUri, synthUri);
   return {

@@ -14,6 +14,7 @@ import {
   clipEnd,
   clipFilterCSS,
   clipSourceTime,
+  transformAt,
   type Clip,
   type Project,
   type TransitionKind,
@@ -228,7 +229,8 @@ export async function renderTimelineBase(
   if (!plan) {
     compositor.drawFrame(null);
   } else if (plan.type === 'single') {
-    const clip = plan.layer.clip;
+    // Animated zoom / reframe keys resolve to a static transform per frame.
+    const clip = { ...plan.layer.clip, transform: transformAt(plan.layer.clip, plan.layer.sourceTime) };
     const frame = await frameFor(plan.layer);
     if (clip.removeBg && frame) {
       await drawBaseClipCutout(compositor, frame, clip);

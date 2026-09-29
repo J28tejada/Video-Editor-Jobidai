@@ -293,7 +293,59 @@ export const AGENT_TOOLS: ToolDef[] = [
       'Analyze the videos on the timeline (transcript with word timings, shot changes and what each shot shows). Slow; run it when you need the transcript or visual descriptions and they are missing.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
+  {
+    name: 'keep_only',
+    description:
+      'Rebuild the edit from timeline spans, in the order given (highlight reels, short versions, re-ordering the story). Everything else is removed. Use transcript times; make each span a complete sentence.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        segments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { start: { type: 'number', minimum: 0 }, end: { type: 'number', minimum: 0 } },
+            required: ['start', 'end'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['segments'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'add_zoom',
+    description:
+      'Emphasis punch-in: zoom in quickly at a timeline time, hold for a moment, and zoom back out. Great on key words or reactions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        at: seconds('Timeline time where the zoom starts.'),
+        duration: { type: 'number', minimum: 0.3, maximum: 5 },
+        scale: { type: 'number', minimum: 1.05, maximum: 2 },
+      },
+      required: ['at'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'auto_reframe',
+    description:
+      'Fill the frame and keep the person centered by tracking their face (e.g. after switching a horizontal video to 9:16). Slow: detects faces on the phone.',
+    input_schema: {
+      type: 'object',
+      properties: { clip_ids: ids('Clip'), zoom: { type: 'number', minimum: 1, maximum: 2 } },
+      required: ['clip_ids'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /** Tools the app runs asynchronously on the device (not pure project edits). */
-export const DEVICE_TOOLS = new Set(['generate_captions', 'remove_silences', 'analyze_media']);
+export const DEVICE_TOOLS = new Set([
+  'generate_captions',
+  'remove_silences',
+  'analyze_media',
+  'auto_reframe',
+]);

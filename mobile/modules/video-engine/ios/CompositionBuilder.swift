@@ -117,13 +117,19 @@ enum CompositionBuilder {
         }
       }
 
-      layers.append(
-        ClipLayer(
-          trackID: track.trackID,
-          transform: placement(
-            natural: naturalSize, preferred: preferredTransform, render: renderSize,
-            cover: clip.fit == "cover", zoom: clip.transform),
-          colorMatrix: clip.colorMatrix))
+      var layer = ClipLayer(
+        trackID: track.trackID,
+        transform: placement(
+          natural: naturalSize, preferred: preferredTransform, render: renderSize,
+          cover: clip.fit == "cover", zoom: clip.transform),
+        colorMatrix: clip.colorMatrix)
+      if let keys = clip.transformKeys, !keys.isEmpty {
+        layer.animated = AnimatedPlacement(
+          natural: naturalSize, preferred: preferredTransform, render: renderSize,
+          cover: clip.fit == "cover", keys: keys, start: cursor.seconds, inPoint: inTime.seconds,
+          speed: speed)
+      }
+      layers.append(layer)
       bodies.append((cursor.seconds, clipEnd.seconds))
 
       // AVAudioMix volume is limited to 0...1; boosts above 1 are clamped.

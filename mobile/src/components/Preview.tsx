@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   PanResponder,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -18,11 +17,11 @@ import { overlayActiveAt, type TextOverlay } from '@timeline/types';
 import { VideoEngineView } from '../../modules/video-engine';
 import { useEditor } from '../editor/EditorContext';
 import { clockTime, setClockDuration, syncClock } from '../engine/playbackClock';
-import { Icon } from '../ui/Icon';
+import { IntentStart } from './IntentStart';
 import { colors, radius } from '../ui/theme';
 
 export function Preview() {
-  const { project, previewJSON, engineRef, setIsPlaying, duration, importVideos } = useEditor();
+  const { project, previewJSON, engineRef, setIsPlaying, duration } = useEditor();
   const [area, setArea] = useState({ w: 0, h: 0 });
 
   const aspect = project.width / project.height;
@@ -57,17 +56,11 @@ export function Preview() {
             onError={(e) => Alert.alert('Error de reproducción', e.nativeEvent.message)}
           />
           <TextLayer width={w} height={h} />
-          {empty && (
-            <Pressable
-              style={styles.empty}
-              onPress={() =>
-                importVideos().catch((err: Error) => Alert.alert('No se pudo importar', err.message))
-              }
-            >
-              <Icon name="import" size={36} color={colors.textDim} />
-              <Text style={styles.emptyText}>Toca para importar videos</Text>
-            </Pressable>
-          )}
+        </View>
+      )}
+      {empty && (
+        <View style={styles.start}>
+          <IntentStart />
         </View>
       )}
     </View>
@@ -91,9 +84,10 @@ function TextLayer({ width, height }: { width: number; height: number }) {
     let lastKey = '';
     const tick = () => {
       const t = clockTime();
+      // Include the spoken word so karaoke captions re-render per word only.
       const key = overlaysRef.current
         .filter((o) => overlayActiveAt(o, t))
-        .map((o) => o.id)
+        .map((o) => `${o.id}:${activeWord(o, t)}`)
         .join('|');
       if (key !== lastKey) {
         lastKey = key;
@@ -105,14 +99,29 @@ function TextLayer({ width, height }: { width: number; height: number }) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const visible = new Set(visibleKey.split('|'));
+  const active = new Map(
+    visibleKey
+      .split('|')
+      .filter(Boolean)
+      .map((entry) => {
+        const [id, word] = entry.split(':');
+        return [id, Number(word)] as const;
+      }),
+  );
   const selectedId = selection?.kind === 'text' ? selection.id : null;
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {project.overlays
-        .filter((o) => visible.has(o.id) || o.id === selectedId)
+        .filter((o) => active.has(o.id) || o.id === selectedId)
         .map((o) => (
-          <TextBox key={o.id} overlay={o} width={width} height={height} selected={o.id === selectedId} />
+          <TextBox
+            key={o.id}
+            overlay={o}
+            width={width}
+            height={height}
+            selected={o.id === selectedId}
+            activeWord={active.get(o.id) ?? -1}
+          />
         ))}
     </View>
   );
@@ -124,11 +133,13 @@ function TextBox({
   width,
   height,
   selected,
+  activeWord,
 }: {
   overlay: TextOverlay;
   width: number;
   height: number;
   selected: boolean;
+  activeWord: number;
 }) {
   const { select, patchText } = useEditor();
   const fontPx = Math.max(1, o.fontSizeNorm * height);
@@ -201,7 +212,14 @@ function TextBox({
           }}
           numberOfLines={1}
         >
-          {o.text}
+          {o.words?.length
+            ? o.words.map((w, i) => (
+                <Text key={i} style={i === activeWord ? { color: o.highlightColor ?? '#ffe600' } : undefined}>
+                  {i > 0 ? ' ' : ''}
+                  {w.text}
+                </Text>
+              ))
+            : o.text}
         </Text>
       </View>
     </View>
@@ -210,17 +228,18 @@ function TextBox({
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
+/** Index of the word being spoken (karaoke), or -1. */
+function activeWord(o: TextOverlay, t: number): number {
+  if (!o.words?.length) return -1;
+  let idx = -1;
+  for (let i = 0; i < o.words.length; i++) if (t >= o.words[i].start) idx = i;
+  return idx;
+}
+
 const styles = StyleSheet.create({
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 },
   frame: { backgroundColor: '#000', overflow: 'hidden', borderRadius: radius.sm },
-  empty: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: colors.panel,
-  },
-  emptyText: { color: colors.textDim, fontSize: 15 },
+  start: { ...StyleSheet.absoluteFill, backgroundColor: colors.bg, justifyContent: 'center' },
   textRow: { position: 'absolute', justifyContent: 'center' },
   textSelected: { borderWidth: 1.5, borderColor: colors.clipSelected, borderStyle: 'dashed' },
 });

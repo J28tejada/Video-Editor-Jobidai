@@ -48,6 +48,28 @@ export type ClipTransform = { scale: number; xNorm: number; yNorm: number };
 
 export const DEFAULT_TRANSFORM: ClipTransform = { scale: 1, xNorm: 0.5, yNorm: 0.5 };
 
+export type TransformKey = ClipTransform & { t: number };
+
+/** Transform of a clip at a source time (keys interpolated, ends held). */
+export function transformAt(clip: { transform?: ClipTransform; transformKeys?: TransformKey[] }, sourceTime: number): ClipTransform {
+  const keys = clip.transformKeys;
+  if (!keys || keys.length === 0) return clip.transform ?? DEFAULT_TRANSFORM;
+  if (sourceTime <= keys[0].t) return keys[0];
+  for (let i = 1; i < keys.length; i++) {
+    const a = keys[i - 1];
+    const b = keys[i];
+    if (sourceTime <= b.t) {
+      const k = b.t > a.t ? (sourceTime - a.t) / (b.t - a.t) : 1;
+      return {
+        scale: a.scale + (b.scale - a.scale) * k,
+        xNorm: a.xNorm + (b.xNorm - a.xNorm) * k,
+        yNorm: a.yNorm + (b.yNorm - a.yNorm) * k,
+      };
+    }
+  }
+  return keys[keys.length - 1];
+}
+
 export type Clip = {
   id: string;
   kind: ClipKind;
@@ -59,8 +81,14 @@ export type Clip = {
   volume?: number;
   /** Mute this clip's audio. */
   muted?: boolean;
-  /** Placement on overlay tracks (logos / PiP). */
+  /** Placement on overlay tracks (logos / PiP); zoom / reframe on the base track. */
   transform?: ClipTransform;
+  /**
+   * Animated zoom / reframe (auto-reframe, emphasis zooms). Keys are in
+   * SOURCE seconds so they stay valid through trims and splits; values are
+   * interpolated linearly and override `transform` while present.
+   */
+  transformKeys?: TransformKey[];
   /** Enter/exit animations (overlay clips: logos / PiP). */
   enter?: import('./anim').Anim;
   exit?: import('./anim').Anim;

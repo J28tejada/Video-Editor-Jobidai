@@ -15,6 +15,23 @@ struct EngineClip: Decodable {
   let colorMatrix: [Double]?
   /// Zoom / reframe after fitting, or nil.
   let transform: EngineTransform?
+  /// Animated zoom / reframe keyed by source seconds, or nil.
+  let transformKeys: [EngineTransformKey]?
+  let srcWidth: Double?
+  let srcHeight: Double?
+}
+
+struct EngineTransformKey: Decodable {
+  let t: Double
+  let scale: Double
+  let xNorm: Double
+  let yNorm: Double
+}
+
+struct EngineWord: Decodable {
+  let text: String
+  let start: Double
+  let end: Double
 }
 
 struct EngineTransform: Decodable {
@@ -42,6 +59,9 @@ struct EngineText: Decodable {
   let fontWeight: Double
   let background: String?
   let align: String
+  /// Karaoke word timings (timeline seconds) and highlight color.
+  let words: [EngineWord]?
+  let highlightColor: String?
 }
 
 struct GainPoint: Decodable {

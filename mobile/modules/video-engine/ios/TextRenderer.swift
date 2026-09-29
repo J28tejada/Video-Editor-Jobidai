@@ -21,17 +21,35 @@ enum TextRenderer {
 
     for text in texts where text.end > text.start {
       guard let rendered = rasterize(text, renderSize: renderSize) else { continue }
-      let layer = CALayer()
-      layer.contents = rendered.image.cgImage
-      layer.frame = rendered.box
-      layer.contentsScale = 1
-      layer.opacity = 0
-      layer.add(visibility(start: text.start, end: text.end, duration: duration), forKey: "visibility")
-      parent.addSublayer(layer)
+      parent.addSublayer(timedLayer(rendered, start: text.start, end: text.end, duration: duration))
+      // Karaoke: the same line with the spoken word highlighted, on top,
+      // during each word.
+      if let words = text.words, !words.isEmpty {
+        for (i, word) in words.enumerated() {
+          let wordEnd = min(text.end, max(word.end, i + 1 < words.count ? words[i + 1].start : text.end))
+          let wordStart = max(text.start, word.start)
+          guard wordEnd > wordStart, let lit = rasterize(text, renderSize: renderSize, highlight: i) else {
+            continue
+          }
+          parent.addSublayer(timedLayer(lit, start: wordStart, end: wordEnd, duration: duration))
+        }
+      }
     }
 
     return AVVideoCompositionCoreAnimationTool(
       postProcessingAsVideoLayer: videoLayer, in: parent)
+  }
+
+  private static func timedLayer(
+    _ rendered: (image: UIImage, box: CGRect), start: Double, end: Double, duration: Double
+  ) -> CALayer {
+    let layer = CALayer()
+    layer.contents = rendered.image.cgImage
+    layer.frame = rendered.box
+    layer.contentsScale = 1
+    layer.opacity = 0
+    layer.add(visibility(start: start, end: end, duration: duration), forKey: "visibility")
+    return layer
   }
 
   /// Opacity 0 → 1 at `start`, 1 → 0 at `end` (near-instant steps).
@@ -70,7 +88,9 @@ enum TextRenderer {
 
   /// Draws one text box into an image. Returns the image and its frame in the
   /// render (top-left origin).
-  static func rasterize(_ text: EngineText, renderSize: CGSize) -> (image: UIImage, box: CGRect)? {
+  static func rasterize(_ text: EngineText, renderSize: CGSize, highlight: Int? = nil)
+    -> (image: UIImage, box: CGRect)?
+  {
     let fontPx = max(1, CGFloat(text.fontSizeNorm) * renderSize.height)
     let font = UIFont.systemFont(ofSize: fontPx, weight: weight(text.fontWeight))
     let hasBackground = text.background != nil
@@ -85,7 +105,24 @@ enum TextRenderer {
       .foregroundColor: parseColor(text.color),
       .shadow: shadow,
     ]
-    let string = NSAttributedString(string: text.text, attributes: attributes)
+    // With word timings, the line is the words joined, so each word's range
+    // is known for karaoke highlighting.
+    let words = text.words ?? []
+    let display = words.isEmpty ? text.text : words.map(\.text).joined(separator: " ")
+    let string = NSMutableAttributedString(string: display, attributes: attributes)
+    if let h = highlight, h < words.count {
+      var location = 0
+      for (i, w) in words.enumerated() {
+        let length = (w.text as NSString).length
+        if i == h {
+          string.addAttribute(
+            .foregroundColor, value: parseColor(text.highlightColor ?? "#ffe600"),
+            range: NSRange(location: location, length: length))
+          break
+        }
+        location += length + 1
+      }
+    }
     let textSize = string.size()
     guard textSize.width > 0 else { return nil }
 

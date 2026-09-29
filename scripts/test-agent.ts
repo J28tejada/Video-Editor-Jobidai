@@ -9,7 +9,8 @@ import { handleAgent, echoable } from '../api/_lib/agent';
 import { handleDescribe } from '../api/_lib/describe';
 import { detectShots, findFillers, longPauses, suggestEdits, timelineWords } from '../src/core/agent/understanding';
 import { describeProject } from '../src/core/agent/context';
-import { cutSourceRanges, deleteRange, keepRanges } from '../src/core/agent/editOps';
+import { addEmphasisZoom, cutSourceRanges, deleteRange, keepRanges, reframeKeys, timelineToSourceRanges } from '../src/core/agent/editOps';
+import { transformAt } from '../src/core/timeline/types';
 import { executeTool } from '../src/core/agent/execute';
 import { runAgent } from '../src/core/agent/loop';
 import type { AgentMessage, AgentResponse } from '../src/core/agent/protocol';
@@ -159,6 +160,45 @@ await test('project description lists ids and transcript', () => {
   assert.ok(text.includes(a.id));
   assert.ok(text.includes('[0.5] Hola mundo'));
   assert.ok(text.includes('Selección: clip'));
+});
+
+await test('keep_only builds a reel from timeline spans in order', () => {
+  const p = run(sample(), 'keep_only', { segments: [{ start: 11, end: 13 }, { start: 1, end: 3 }] });
+  const clips = primaryTrack(p).clips;
+  assert.equal(clips.length, 2);
+  assert.equal(clips[0].sourceId, 'srcB');
+  assert.ok(near(clips[0].inPoint, 1) && near(clips[1].inPoint, 1));
+  assert.ok(near(totalDuration(p), 4));
+});
+
+await test('timelineToSourceRanges splits across clips and speed', () => {
+  const p = run(sample(), 'set_speed', { clip_ids: ['all'], speed: 2 });
+  const r = timelineToSourceRanges(p, [{ start: 4, end: 6 }]);
+  assert.deepEqual(r.map((x) => [x.sourceId, x.start, x.end]), [['srcA', 8, 10], ['srcB', 0, 2]]);
+});
+
+await test('emphasis zoom animates and returns', () => {
+  const p = addEmphasisZoom(sample(), 2, 1, 1.5);
+  const c = primaryTrack(p).clips[0];
+  assert.ok(near(transformAt(c, 2.5).scale, 1.5));
+  assert.ok(near(transformAt(c, 1).scale, 1));
+  assert.ok(near(transformAt(c, 3.5).scale, 1));
+  assert.ok(run(sample(), 'add_zoom', { at: 12 }));
+});
+
+await test('reframe keeps a subject centered within the covered frame', () => {
+  // 16:9 source into 9:16: fitted width is 3.16× the output width.
+  const keys = reframeKeys(1920, 1080, 1080, 1920, 0, 2, [
+    { t: 0, x: 0.5, y: 0.5 },
+    { t: 2, x: 0.5, y: 0.5 },
+  ]);
+  assert.ok(keys.every((k) => near(k.xNorm, 0.5)));
+  const left = reframeKeys(1920, 1080, 1080, 1920, 0, 2, [{ t: 1, x: 0.3, y: 0.5 }]);
+  const fw = (1920 * (1920 / 1080)) / 1080;
+  assert.ok(near(left[0].xNorm, 0.5 + fw * 0.2, 1e-9));
+  // Subject at the very edge: clamped so the frame stays covered.
+  const edge = reframeKeys(1920, 1080, 1080, 1920, 0, 2, [{ t: 1, x: 0.0, y: 0.5 }]);
+  assert.ok(near(edge[0].xNorm, fw / 2, 1e-9));
 });
 
 // ---- understanding ----

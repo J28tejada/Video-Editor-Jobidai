@@ -154,7 +154,7 @@ object CompositionFactory {
       }
     }
     val builder = EditedMediaItem.Builder(mediaItem)
-      .setEffects(Effects(audio, videoEffects(clip, width, height)))
+      .setEffects(Effects(audio, videoEffects(clip, width, height, fromSec)))
       .setFrameRate(fps.toInt().coerceIn(1, 120))
     if (!withAudio) builder.setRemoveAudio(true)
     if (clip.speed != 1.0) {
@@ -179,18 +179,20 @@ object CompositionFactory {
       .build()
     return EditedMediaItem.Builder(mediaItem)
       .setFrameRate(fps.toInt().coerceIn(1, 120))
-      .setEffects(Effects(listOf(), videoEffects(clip, width, height)))
+      .setEffects(Effects(listOf(), videoEffects(clip, width, height, clip.inPoint)))
       .build()
   }
 
   /** Fit into the output frame, then color matrix, then zoom / reframe. */
-  private fun videoEffects(clip: EngineClip, width: Int, height: Int): List<Effect> {
-    val effects = mutableListOf<Effect>(
-      Presentation.createForWidthAndHeight(
-        width, height,
-        if (clip.fit == "cover") Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT,
-      ),
-    )
+  private fun videoEffects(clip: EngineClip, width: Int, height: Int, fromSec: Double = clip.inPoint): List<Effect> {
+    val keys = clip.transformKeys?.takeIf { it.isNotEmpty() }
+    val moves = keys != null || clip.transform != null
+    // Zoom / reframe must be able to pan over the whole image, so the frame is
+    // fitted whole (contain) and then scaled up to cover; cropping first
+    // (LAYOUT_SCALE_TO_FIT_WITH_CROP) would lose what panning should reveal.
+    val layout = if (clip.fit == "cover" && !moves) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+    else Presentation.LAYOUT_SCALE_TO_FIT
+    val effects = mutableListOf<Effect>(Presentation.createForWidthAndHeight(width, height, layout))
     clip.colorMatrix?.let { m ->
       // Column-major 4×4 for `uRgbMatrix * vec4(rgb, 1)`: the 4th column is the offset.
       val gl = floatArrayOf(
@@ -201,18 +203,79 @@ object CompositionFactory {
       )
       effects += RgbMatrix { _, _ -> gl }
     }
-    clip.transform?.let { t ->
-      // NDC space (−1..1, y up): scale about the center, then move the center.
-      val matrix = Matrix().apply {
-        setScale(t.scale.toFloat(), t.scale.toFloat())
-        postTranslate((2 * t.xNorm - 1).toFloat(), (1 - 2 * t.yNorm).toFloat())
-      }
-      effects += MatrixTransformation { matrix }
-    }
+    if (moves) effects += KeyframedTransform(clip, coverRatio(clip, width, height), fromSec)
     return effects
   }
 
+  /** How much bigger "cover" is than "contain" for this clip's source. */
+  private fun coverRatio(clip: EngineClip, width: Int, height: Int): Double {
+    if (clip.fit != "cover" || clip.srcWidth <= 0 || clip.srcHeight <= 0) return 1.0
+    val sx = width / clip.srcWidth
+    val sy = height / clip.srcHeight
+    return maxOf(sx, sy) / minOf(sx, sy)
+  }
+
   private fun us(sec: Double): Long = (sec * 1_000_000).toLong()
+}
+
+/**
+ * Zoom / reframe as a GL matrix: scale about the center (cover ratio × zoom),
+ * then move the center to (xNorm, yNorm). With keys, the values follow the
+ * clip's source time.
+ *
+ * Media3 versions differ in what timestamps per-item effects receive
+ * (composition time, item-relative, or source time), so the time base is
+ * detected from the first frame: it must map to the slice's first source
+ * time (`fromSec`).
+ */
+@UnstableApi
+class KeyframedTransform(
+  private val clip: EngineClip,
+  private val coverRatio: Double,
+  private val fromSec: Double,
+) : MatrixTransformation {
+  private var toSource: ((Long) -> Double)? = null
+
+  override fun getMatrix(presentationTimeUs: Long): Matrix {
+    val keys = clip.transformKeys
+    val (scale, x, y) = if (keys.isNullOrEmpty()) {
+      val t = clip.transform
+      Triple(t?.scale ?: 1.0, t?.xNorm ?: 0.5, t?.yNorm ?: 0.5)
+    } else {
+      keyAt(keys, sourceTime(presentationTimeUs))
+    }
+    val s = (coverRatio * scale).toFloat()
+    return Matrix().apply {
+      setScale(s, s)
+      postTranslate((2 * x - 1).toFloat(), (1 - 2 * y).toFloat())
+    }
+  }
+
+  private fun sourceTime(ptsUs: Long): Double {
+    val map = toSource ?: run {
+      val candidates = listOf<(Long) -> Double>(
+        { us -> clip.inPoint + (us / 1e6 - clip.start) * clip.speed },
+        { us -> fromSec + us / 1e6 * clip.speed },
+        { us -> us / 1e6 },
+      )
+      candidates.minByOrNull { kotlin.math.abs(it(ptsUs) - fromSec) }!!.also { toSource = it }
+    }
+    return map(ptsUs)
+  }
+
+  private fun keyAt(keys: List<TransformKey>, t: Double): Triple<Double, Double, Double> {
+    if (t <= keys.first().t) return keys.first().let { Triple(it.scale, it.xNorm, it.yNorm) }
+    if (t >= keys.last().t) return keys.last().let { Triple(it.scale, it.xNorm, it.yNorm) }
+    for (i in 1 until keys.size) {
+      val a = keys[i - 1]
+      val b = keys[i]
+      if (t <= b.t) {
+        val k = if (b.t > a.t) (t - a.t) / (b.t - a.t) else 1.0
+        return Triple(a.scale + (b.scale - a.scale) * k, a.xNorm + (b.xNorm - a.xNorm) * k, a.yNorm + (b.yNorm - a.yNorm) * k)
+      }
+    }
+    return keys.last().let { Triple(it.scale, it.xNorm, it.yNorm) }
+  }
 }
 
 /**

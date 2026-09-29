@@ -92,6 +92,10 @@ public class VideoEngineModule: Module {
       try await ShotAnalyzer.measure(uri: uri, interval: interval, maxSamples: maxSamples)
     }
 
+    AsyncFunction("detectFacesAsync") { (uri: String, times: [Double]) async throws -> [[String: Double]] in
+      try await FaceTracker.detect(uri: uri, times: times)
+    }
+
     AsyncFunction("exportAsync") { (json: String, shortSide: Double) async throws -> [String: Any] in
       guard self.exportSession == nil else { throw ExportInProgressException() }
       let spec = try EngineComposition.decode(json)

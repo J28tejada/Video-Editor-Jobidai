@@ -8,7 +8,7 @@ import {
   removeClip,
   splitAt,
 } from '../timeline/project';
-import { clipEnd, type Clip, type Project } from '../timeline/types';
+import { clipEnd, transformAt, type Clip, type Project, type TransformKey } from '../timeline/types';
 
 const EPS = 0.005;
 
@@ -93,4 +93,114 @@ export function keepRanges(project: Project, ranges: SourceRange[]): Project {
   });
   const tracks = project.tracks.map((t) => (t.id === base.id ? { ...t, clips: packed } : t));
   return { ...project, tracks, transitions: [] };
+}
+
+/** Timeline spans → the source spans they show (split at clip boundaries). */
+export function timelineToSourceRanges(
+  project: Project,
+  spans: { start: number; end: number }[],
+): SourceRange[] {
+  const out: SourceRange[] = [];
+  const clips = primaryTrack(project).clips;
+  for (const span of spans) {
+    for (const c of clips) {
+      const a = Math.max(span.start, c.startInTimeline);
+      const b = Math.min(span.end, clipEnd(c));
+      if (b - a < 0.05) continue;
+      const speed = c.speed && c.speed > 0 ? c.speed : 1;
+      out.push({
+        sourceId: c.sourceId,
+        start: c.inPoint + (a - c.startInTimeline) * speed,
+        end: c.inPoint + (b - c.startInTimeline) * speed,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Emphasis "punch-in": zoom to `scale` around timeline time `at` for
+ * `duration` seconds (quick ease in/out), on the clip under that time.
+ */
+export function addEmphasisZoom(project: Project, at: number, duration: number, scale: number): Project {
+  const base = primaryTrack(project);
+  const clip = base.clips.find((c) => at >= c.startInTimeline && at < clipEnd(c));
+  if (!clip) return project;
+  const speed = clip.speed && clip.speed > 0 ? clip.speed : 1;
+  const toSrc = (t: number) => clip.inPoint + (t - clip.startInTimeline) * speed;
+  const end = Math.min(clipEnd(clip), at + duration);
+  const ramp = Math.min(0.2, (end - at) / 3);
+  const baseT = transformAt(clip, toSrc(at));
+  const zoomed = { ...baseT, scale: baseT.scale * scale };
+  const keys: TransformKey[] = [...(clip.transformKeys ?? [])];
+  if (keys.length === 0) {
+    keys.push({ t: clip.inPoint, ...baseT }, { t: clip.outPoint, ...baseT });
+  }
+  const added: TransformKey[] = [
+    { t: toSrc(at), ...baseT },
+    { t: toSrc(at + ramp), ...zoomed },
+    { t: toSrc(end - ramp), ...zoomed },
+    { t: toSrc(end), ...baseT },
+  ];
+  const [from, to] = [added[0].t, added[3].t];
+  const merged = [...keys.filter((k) => k.t < from || k.t > to), ...added].sort((a, b) => a.t - b.t);
+  const clips = base.clips.map((c) => (c.id === clip.id ? { ...c, transformKeys: merged } : c));
+  return { ...project, tracks: project.tracks.map((t) => (t.id === base.id ? { ...t, clips } : t)) };
+}
+
+/**
+ * Auto-reframe: keys that keep a tracked subject centered when a clip fills
+ * (cover) an output of a different aspect. `subjects` are subject centers
+ * (0..1 of the source frame) at source times; the path is smoothed so the
+ * virtual camera moves calmly, and clamped so the frame stays covered.
+ */
+export function reframeKeys(
+  srcW: number,
+  srcH: number,
+  outW: number,
+  outH: number,
+  inPoint: number,
+  outPoint: number,
+  subjects: { t: number; x: number; y: number }[],
+  zoom = 1,
+): TransformKey[] {
+  const cover = Math.max(outW / srcW, outH / srcH) * zoom;
+  const fw = (srcW * cover) / outW; // fitted size relative to output
+  const fh = (srcH * cover) / outH;
+  const inRange = subjects.filter((s) => s.t >= inPoint - 0.5 && s.t <= outPoint + 0.5).sort((a, b) => a.t - b.t);
+  const center = (fx: number, f: number) => {
+    const v = 0.5 + f * (0.5 - fx);
+    const lo = 1 - f / 2;
+    const hi = f / 2;
+    return Math.min(Math.max(v, Math.min(lo, hi)), Math.max(lo, hi));
+  };
+  if (inRange.length === 0) return [];
+  // Moving average over ±1 s, then sample every 0.5 s.
+  const smooth = (t: number, axis: 'x' | 'y') => {
+    const near = inRange.filter((s) => Math.abs(s.t - t) <= 1);
+    const list = near.length ? near : [inRange.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a))];
+    return list.reduce((sum, s) => sum + s[axis], 0) / list.length;
+  };
+  const keys: TransformKey[] = [];
+  for (let t = inPoint; t <= outPoint + 1e-6; t += 0.5) {
+    keys.push({ t, scale: zoom, xNorm: center(smooth(t, 'x'), fw), yNorm: center(smooth(t, 'y'), fh) });
+  }
+  if (keys[keys.length - 1].t < outPoint) {
+    keys.push({ ...keys[keys.length - 1], t: outPoint });
+  }
+  return keys;
+}
+
+/** Set a base clip's fit and animated transform keys (auto-reframe). */
+export function setTransformKeys(
+  project: Project,
+  clipId: string,
+  keys: TransformKey[],
+  fit?: 'contain' | 'cover',
+): Project {
+  const base = primaryTrack(project);
+  const clips = base.clips.map((c) =>
+    c.id === clipId ? { ...c, transformKeys: keys.length ? keys : undefined, ...(fit ? { fit } : {}) } : c,
+  );
+  return { ...project, tracks: project.tracks.map((t) => (t.id === base.id ? { ...t, clips } : t)) };
 }

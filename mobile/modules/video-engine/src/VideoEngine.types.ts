@@ -32,6 +32,14 @@ export type EngineClip = {
    * `scale` and centered at (xNorm, yNorm) of the output. Null = centered, 1×.
    */
   transform: { scale: number; xNorm: number; yNorm: number } | null;
+  /**
+   * Animated zoom / reframe keyed by SOURCE seconds (linear, ends held).
+   * Overrides `transform` while present.
+   */
+  transformKeys: { t: number; scale: number; xNorm: number; yNorm: number }[] | null;
+  /** Display size of the source (rotation applied), for reframing math. */
+  srcWidth: number;
+  srcHeight: number;
 };
 
 export type EngineTransitionKind = 'crossfade' | 'fade' | 'slide';
@@ -62,6 +70,9 @@ export type EngineText = {
   fontWeight: number;
   background: string | null;
   align: 'left' | 'center' | 'right';
+  /** Karaoke: word timings (timeline seconds); the active one is highlighted. */
+  words?: { text: string; start: number; end: number }[];
+  highlightColor?: string;
 };
 
 /** A point of a piecewise-linear gain envelope, on the timeline. */

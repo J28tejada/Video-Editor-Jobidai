@@ -36,7 +36,7 @@ import {
 import type { ClipFilters, Project, TextOverlay } from '../timeline/types';
 import { synthDuration } from '../audio/sfxList';
 import type { SourceIndex } from './context';
-import { cutSourceRanges, deleteRange } from './editOps';
+import { addEmphasisZoom, cutSourceRanges, deleteRange, keepRanges, timelineToSourceRanges } from './editOps';
 import { findFillers, timelineWords } from './understanding';
 
 export type ToolCall = { name: string; input: unknown };
@@ -161,6 +161,30 @@ const HANDLERS: Record<string, (p: Project, input: Input, ctx: ExecContext) => T
     if (cuts.length === 0) return ok(p, 'No se encontraron muletillas');
     const next = cutSourceRanges(p, cuts);
     return ok(next, `${cuts.length} muletilla(s) quitada(s) (${s(totalDuration(p) - totalDuration(next))})`);
+  },
+
+  keep_only(p, input) {
+    const raw = input.segments;
+    if (!Array.isArray(raw) || raw.length === 0) throw new InputError('"segments" must be a non-empty list.');
+    const total = totalDuration(p);
+    const spans = raw.map((seg, i) => {
+      const o = (seg ?? {}) as Input;
+      const start = num(o, 'start', 0, total);
+      const end = Math.min(num(o, 'end', 0), total);
+      if (end - start < 0.1) throw new InputError(`Segment ${i} is empty or reversed.`);
+      return { start, end };
+    });
+    const next = keepRanges(p, timelineToSourceRanges(p, spans));
+    return ok(next, `Nuevo montaje de ${spans.length} tramo(s), ${s(totalDuration(next))}`);
+  },
+
+  add_zoom(p, input) {
+    const at = num(input, 'at', 0, totalDuration(p));
+    const duration = optNum(input, 'duration', 0.3, 5) ?? 1.2;
+    const scale = optNum(input, 'scale', 1.05, 2) ?? 1.25;
+    const next = addEmphasisZoom(p, at, duration, scale);
+    if (next === p) throw new InputError(`No clip at ${at}.`);
+    return ok(next, `Zoom de énfasis en ${s(at)}`);
   },
 
   split_at(p, input) {

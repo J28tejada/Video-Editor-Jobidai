@@ -65,6 +65,28 @@ Con eso:
   inicio lento, falta de subtítulos, formato, duración;
 - los subtítulos reutilizan la transcripción ya hecha (instantáneos).
 
+## Crear por intención (A3)
+
+- **Inicio por intención**: con el proyecto vacío la app pregunta "¿Qué
+  quieres crear?" (Reel de 30 s, Tutorial, Vlog, Clip de podcast, Anuncio o
+  Solo editar). Tras importar, el agente recibe el objetivo, analiza y arma un
+  primer montaje.
+- **Reels / versiones cortas**: `keep_only` reconstruye el montaje con tramos
+  del timeline en el orden elegido por el agente (frases completas de la
+  transcripción).
+- **Reencuadre automático** (`auto_reframe`): detecta la cara principal
+  (Vision en iOS, `FaceDetector` en Android) cada ~0,5 s, suaviza el
+  recorrido y genera fotogramas clave de encuadre para que la persona quede
+  centrada al pasar de horizontal a vertical, sin dejar bordes.
+- **Zooms de énfasis** (`add_zoom`): acercamiento rápido, pausa y vuelta.
+- **Transformaciones animadas**: `Clip.transformKeys` (segundos de la fuente,
+  interpolación lineal). iOS las evalúa por fotograma en el compositor;
+  Android con un `MatrixTransformation` y encaje completo + escala (así el
+  paneo nunca muestra bordes); la web también las respeta.
+- **Subtítulos karaoke**: la palabra que se dice se resalta en el preview y en
+  el video exportado (iOS: una capa por palabra; Android: redibujo por
+  palabra activa).
+
 ## Configuración
 
 ### Backend (Vercel, mismo proyecto que la web)

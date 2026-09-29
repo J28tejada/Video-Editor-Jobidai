@@ -1,0 +1,77 @@
+# Agente de edición
+
+La app móvil gira alrededor de un asistente: el usuario pide en lenguaje
+natural ("quita los silencios y pon subtítulos amarillos") y el agente edita
+el proyecto llamando herramientas. Cada pedido llega como una tarjeta de
+cambios con **Deshacer**.
+
+## Arquitectura
+
+```
+App (teléfono)                                   Backend (Vercel)            Claude
+────────────────────────────────────────         ─────────────────           ──────────────
+Proyecto (JSON) ──► describeProject() ─┐
+                                        ├─ POST /api/agent ─► prompt + herramientas ─► Opus 5.5
+runAgent(): ejecuta las herramientas ◄──┘◄── contenido del asistente ◄──────────────────┘
+  · puras: executeTool()  (src/core/agent/execute.ts)
+  · del dispositivo: subtítulos (Whisper), silencios
+```
+
+- **El proyecto y el video nunca salen del teléfono.** Al modelo le llega una
+  descripción en texto del timeline (ids, tiempos, ajustes) y, cuando hay
+  análisis, la transcripción y descripciones de planos.
+- **El bucle corre en la app** (`src/core/agent/loop.ts`) porque las
+  herramientas modifican el proyecto local. El backend es un proxy sin
+  estado: guarda la clave de API, el prompt de sistema y las definiciones de
+  herramientas.
+- **Código compartido** en `src/core/agent/`: herramientas (`tools.ts`),
+  ejecutor puro (`execute.ts`), operaciones nuevas (`editOps.ts`), contexto
+  (`context.ts`), prompt (`prompt.ts`) y bucle (`loop.ts`). Se prueban con
+  `npm run test:agent` sin red.
+
+### Uso de la API de Claude
+
+- Modelo `claude-opus-5-5`, esfuerzo `medium` (comandos de edición no
+  necesitan más; se puede subir para pedidos complejos).
+- **Caché de prompt**: herramientas + sistema fijos, y caché automática de la
+  conversación, así cada vuelta relee el historial a precio de caché.
+- **Fallbacks del servidor** (`fallbacks: "default"`): si un clasificador de
+  seguridad rechaza un pedido, la API lo reintenta en el modelo recomendado en
+  lugar de fallar.
+- El contenido del asistente se devuelve y se reenvía sin modificar (los
+  bloques de razonamiento deben volver intactos).
+
+## Configuración
+
+### Backend (Vercel, mismo proyecto que la web)
+
+En *Settings → Environment Variables* del proyecto de Vercel:
+
+| Variable | Valor |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Clave de la consola de Anthropic (obligatoria) |
+| `AGENT_APP_KEY` | Un secreto largo y aleatorio (recomendado) |
+
+Al hacer push a `main`, Vercel despliega `api/agent.ts` como
+`https://<tu-dominio>/api/agent`.
+
+### App
+
+Al compilar la app (EAS o local) define:
+
+```bash
+EXPO_PUBLIC_AGENT_URL=https://<tu-dominio-de-vercel>
+EXPO_PUBLIC_AGENT_KEY=<mismo valor que AGENT_APP_KEY>
+```
+
+Con EAS se añaden en `eas.json` → `build.<perfil>.env`, o como variables del
+proyecto en expo.dev.
+
+### Seguridad y costos
+
+- `AGENT_APP_KEY` evita el uso casual del endpoint, pero cualquier secreto
+  dentro de una app se puede extraer. Antes de publicar hace falta **cuentas de
+  usuario** (p. ej. Supabase Auth) y **límites/créditos por usuario** en el
+  backend. Es una decisión de producto pendiente (proveedor y modelo de cobro).
+- Cada pedido cuesta del orden de centavos de dólar; la caché reduce mucho el
+  costo de los pedidos siguientes en la misma conversación.

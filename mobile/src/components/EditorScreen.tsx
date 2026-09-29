@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEditor } from '../editor/EditorContext';
 import { Icon } from '../ui/Icon';
 import { colors, radius } from '../ui/theme';
+import { AgentBar, AgentPanel } from './AgentPanel';
 import { AiSheet } from './AiSheet';
 import { AudioAddSheet, MusicSheet, SfxSheet } from './AudioSheets';
 import { ClipSheets, FormatSheet, TextSheet, type SheetKind } from './EditSheets';
@@ -18,6 +19,7 @@ import { Transport } from './Transport';
 export function EditorScreen() {
   const { ready, duration, newProject } = useEditor();
   const [sheet, setSheet] = useState<SheetKind>(null);
+  const [agentOpen, setAgentOpen] = useState(false);
   const close = () => setSheet(null);
 
   if (!ready) {
@@ -55,7 +57,9 @@ export function EditorScreen() {
       <Preview />
       <Transport />
       <Timeline />
+      <AgentBar onOpen={() => setAgentOpen(true)} />
       <Toolbar openSheet={setSheet} />
+      <AgentPanel visible={agentOpen} onClose={() => setAgentOpen(false)} />
 
       <ClipSheets open={sheet} onClose={close} />
       <TextSheet open={sheet} onClose={close} />

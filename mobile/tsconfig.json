@@ -14,6 +14,9 @@
       ],
       "@ai/*": [
         "../src/core/ai/*"
+      ],
+      "@agent/*": [
+        "../src/core/agent/*"
       ]
     }
   },

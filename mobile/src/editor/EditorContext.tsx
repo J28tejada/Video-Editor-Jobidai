@@ -141,6 +141,14 @@ type EditorValue = {
   /** Replace auto-captions with a fresh Whisper transcription. Returns line count. */
   autoCaptions: (opts: CaptionOptions) => Promise<number>;
 
+  /** Latest project (also between renders), for long-running tasks. */
+  getProject: () => Project;
+  /**
+   * Replace the project wholesale (agent edits). Calls sharing a coalesceKey
+   * collapse into one undo step.
+   */
+  commitProject: (project: Project, coalesceKey: string | null) => void;
+
   engineRef: RefObject<VideoEngineViewRef | null>;
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
@@ -167,6 +175,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const engineRef = useRef<VideoEngineViewRef | null>(null);
 
   const project = history.present;
+  const projectRef = useRef(project);
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   // ---- Load / save ----
 
@@ -502,6 +514,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [apply, pause, project, resolveUri],
   );
 
+  const getProject = useCallback(() => projectRef.current, []);
+
+  const commitProject = useCallback(
+    (next: Project, coalesceKey: string | null) => {
+      projectRef.current = next;
+      apply(() => next, coalesceKey);
+    },
+    [apply],
+  );
+
   const newProject = useCallback(() => {
     pause();
     setSelection(null);
@@ -548,6 +570,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     removeSilences,
     patchCaptionStyle,
     autoCaptions,
+    getProject,
+    commitProject,
     engineRef,
     isPlaying,
     setIsPlaying,

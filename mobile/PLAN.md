@@ -38,6 +38,17 @@ compone y codifica con el hardware del teléfono.
 | **F5b Quitar fondo** | Segmentación de personas por frame (Vision en iOS, MediaPipe/ML Kit en Android) dentro del compositor | Pendiente — en Android requiere integrar la segmentación en el pipeline de GPU de Media3 |
 | **F6 Producción** | Íconos y splash propios, bundle id definitivo, EAS Build + Submit a App Store / Play Store, analítica y crash reporting | Pendiente |
 
+## Fases del agente (la app gira alrededor de la IA)
+
+Arquitectura y configuración: [docs/AGENT.md](../docs/AGENT.md).
+
+| Fase | Contenido | Estado |
+| --- | --- | --- |
+| **A1 Núcleo del agente** | Barra "Pídele algo a tu editor" + panel con conversación, sugerencias y tarjetas de cambios con Deshacer; 20 herramientas (cortar, borrar tramos, recortar, mover, velocidad, volumen, color, encuadre, transiciones, textos, estilo de subtítulos, música, efectos, formato, subtítulos y silencios en el dispositivo); bucle en la app; backend `/api/agent` en Vercel con Claude Opus 5.5, caché y fallbacks | ✅ Hecho · probado con modelo simulado |
+| **A2 Comprensión** | Índice por fuente (transcripción, planos, descripciones visuales), muletillas, edición por transcripción, sugerencias | Pendiente |
+| **A3 Crear por intención** | Reel por intención, reencuadre automático, zooms de énfasis, subtítulos karaoke, inicio por intención | Pendiente |
+| **A4 Creativo y marca** | B-roll a pantalla completa, cortes al ritmo, textos para publicar, memoria de marca | Pendiente |
+
 ## Verificación hecha
 
 - `tsc --noEmit` y `expo lint`: sin errores.

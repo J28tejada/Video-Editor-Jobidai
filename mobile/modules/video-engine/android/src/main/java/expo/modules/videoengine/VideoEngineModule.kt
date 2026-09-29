@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.media3.common.util.UnstableApi
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
@@ -61,7 +62,7 @@ class VideoEngineModule : Module() {
           result.fold(
             onSuccess = { uri -> promise.resolve(mapOf("uri" to uri)) },
             onFailure = { e ->
-              promise.reject(e as? ExportFailedException ?: ExportFailedException(e.message ?: "error", e))
+              promise.reject(e as? CodedException ?: ExportFailedException(e.message ?: "error", e))
             },
           )
         },
@@ -70,7 +71,6 @@ class VideoEngineModule : Module() {
 
     AsyncFunction("cancelExportAsync") {
       exporter?.cancel()
-      exporter = null
     }.runOnQueue(Queues.MAIN)
 
     View(VideoEngineView::class) {

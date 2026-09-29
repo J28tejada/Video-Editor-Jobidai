@@ -22,6 +22,29 @@ export type EngineClip = {
   volume: number;
   /** contain = letterbox, cover = fill + crop. */
   fit: 'contain' | 'cover';
+  /**
+   * Color adjustment as a 3×4 row-major affine matrix on sRGB (0..1):
+   * [r', g', b'] = M · [r, g, b, 1]. Null = no adjustment.
+   */
+  colorMatrix: number[] | null;
+  /**
+   * Zoom / reframe applied after fitting: the fitted frame is scaled by
+   * `scale` and centered at (xNorm, yNorm) of the output. Null = centered, 1×.
+   */
+  transform: { scale: number; xNorm: number; yNorm: number } | null;
+};
+
+export type EngineTransitionKind = 'crossfade' | 'fade' | 'slide';
+
+/**
+ * Transition across the cut between clips[index] and clips[index + 1],
+ * centered on the cut: it starts `half` seconds before and ends `half` after.
+ * Frames missing past a clip's source range are held (freeze frame).
+ */
+export type EngineTransition = {
+  index: number;
+  kind: EngineTransitionKind;
+  half: number;
 };
 
 /** Text burned into the export. Geometry is normalized to the output frame. */
@@ -73,6 +96,7 @@ export type EngineComposition = {
   clips: EngineClip[];
   texts: EngineText[];
   audio: EngineAudio[];
+  transitions: EngineTransition[];
 };
 
 export type MediaInfo = {

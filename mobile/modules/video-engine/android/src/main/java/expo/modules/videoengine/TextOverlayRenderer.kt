@@ -9,7 +9,6 @@ import android.graphics.Typeface
 import android.os.Build
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -59,28 +58,24 @@ object TextPainter {
 }
 
 /**
- * Full-frame overlay for Transformer: draws every text active at the frame's
- * time. Bitmaps are cached per set of active texts, so they are rasterized
- * only when a text appears or disappears.
- *
- * Media3 has changed across versions whether per-item effects see
- * composition-timeline timestamps or item-relative ones, so the time base is
- * detected from the first frame of the item (it must land on the clip start).
+ * Full-frame overlay drawing every text active at the frame's time. Applied
+ * as a composition-level effect, so frame times are composition-timeline
+ * times and the text sits above clips and transitions. Bitmaps are cached per
+ * set of active texts, so they are rasterized only when one appears or
+ * disappears.
  */
 @UnstableApi
 class TimedTextOverlay(
   private val texts: List<EngineText>,
   private val width: Int,
   private val height: Int,
-  private val clip: EngineClip,
 ) : BitmapOverlay() {
-  private var toTimeline: ((Long) -> Double)? = null
   private var cachedKey: String? = null
   private val bitmap: Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
   private val canvas = Canvas(bitmap)
 
   override fun getBitmap(presentationTimeUs: Long): Bitmap {
-    val t = timelineTime(presentationTimeUs)
+    val t = presentationTimeUs / 1e6
     val active = texts.filter { t >= it.start && t < it.end }
     val key = active.joinToString("|") { it.id }
     if (key != cachedKey) {
@@ -89,19 +84,5 @@ class TimedTextOverlay(
       for (text in active) TextPainter.draw(canvas, text, width, height)
     }
     return bitmap
-  }
-
-  private fun timelineTime(ptsUs: Long): Double {
-    val mapper = toTimeline ?: run {
-      val candidates = listOf<(Long) -> Double>(
-        { us -> us / 1e6 }, // already on the composition timeline
-        { us -> clip.start + us / 1e6 }, // relative to the item, post-speed
-        { us -> clip.start + (us / 1e6 - clip.inPoint) / clip.speed }, // source time
-      )
-      val best = candidates.minByOrNull { abs(it(ptsUs) - clip.start) }!!
-      toTimeline = best
-      best
-    }
-    return mapper(ptsUs)
   }
 }

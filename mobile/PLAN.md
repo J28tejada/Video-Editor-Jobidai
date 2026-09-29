@@ -32,7 +32,8 @@ compone y codifica con el hardware del teléfono.
 | **F1b Motor Android** | Mismo contrato: playlist ExoPlayer con clips recortados, velocidad/volumen/encuadre por clip, miniaturas, exportación con Transformer (Presentation, ganancia, velocidad manteniendo tono, textos con OverlayEffect) | ✅ Hecho · compila contra Media3 1.11.1 |
 | **F2 UI** | Importar de galería, preview con proporción del proyecto, timeline estilo CapCut (playhead fijo, scroll a 60 fps con reloj extrapolado), miniaturas, cortar, borrar, recortar con asas, velocidad, volumen, encuadre, textos (arrastrables, tamaño, color, fondo, posición, duración), formato 9:16/1:1/4:5/16:9, deshacer/rehacer, autoguardado, exportar → galería / compartir | ✅ Hecho |
 | **F3 Audio** | Música de fondo (volumen, entrada/salida gradual, bajar con la voz, repetir hasta el final) y efectos de sonido (7 sintetizados en el dispositivo como WAV + importados). JS calcula una envolvente de ganancia por capa (misma lógica que la web). iOS: pistas extra en la composición con rampas de volumen. Android: secuencias de audio en Transformer con un procesador de envolvente; en el preview, la mezcla se pre-renderiza y suena sincronizada con el video | ✅ Hecho · Android compila; iOS sin compilar |
-| **F4 Visual** | Filtros de color (Core Image / Media3 `RgbMatrix`), transiciones entre clips, overlays de video (PiP), zoom/pan por clip | Pendiente |
+| **F4 Visual** | Filtros de color (estilos compartidos con la web + brillo, contraste, saturación, calidez), zoom y reencuadre por clip, transiciones centradas en el corte (fundido, a negro, deslizar) con congelado de frame cuando la fuente no alcanza. JS convierte los filtros CSS en una matriz de color única. iOS: compositor propio (Core Image) con pistas A/B para preview y export. Android: el preview pasa a `CompositionPlayer`, que reproduce la misma composición que exporta Transformer (secuencia de transición + `VideoCompositorSettings`); textos como efecto de composición | ✅ Hecho · Android compila; iOS sin compilar |
+| **F4b Video sobre video** | Pistas de overlay (PiP) con posición/escala, animaciones de entrada/salida | Pendiente — en Media3 la secuencia principal va encima; requiere pruebas en dispositivo |
 | **F5 IA en el dispositivo** | Subtítulos automáticos (whisper.cpp / WhisperKit), quitar silencios, quitar fondo (Vision / ML Kit) | Pendiente |
 | **F6 Producción** | Íconos y splash propios, bundle id definitivo, EAS Build + Submit a App Store / Play Store, analítica y crash reporting | Pendiente |
 
@@ -42,6 +43,8 @@ compone y codifica con el hardware del teléfono.
 - `expo-doctor`: 21/21 comprobaciones.
 - Metro empaqueta la app e incluye el modelo compartido de `../src/core/timeline`.
 - Android: `./gradlew assembleDebug` y `assembleRelease` compilan (APK instalable).
+- La conversión filtros CSS → matriz de color está verificada numéricamente
+  (brillo, contraste, B/N, saturación, tono y el orden de aplicación).
 - iOS: `swiftc -parse` valida la sintaxis; la compilación real requiere Xcode
   (usar `eas build -p ios` o un Mac).
 
@@ -51,6 +54,10 @@ El motor no se ha podido ejecutar en un teléfono real desde este entorno. Lo
 primero al instalar: importar 2–3 videos (vertical y horizontal), cortar,
 cambiar velocidad, añadir un texto y exportar; comprobar que el texto aparece
 en el momento correcto del MP4 exportado en ambos sistemas.
+
+Visual (F4): aplicar un estilo y un zoom a un clip, añadir una transición de
+cada tipo entre dos clips (uno recortado y otro sin recortar, para ver el
+congelado de frame) y comprobar que el preview y el MP4 exportado coinciden.
 
 Audio (F3): añadir una canción y un par de efectos; comprobar que la música
 entra/sale gradualmente, baja cuando hablan en el video, y que en Android el

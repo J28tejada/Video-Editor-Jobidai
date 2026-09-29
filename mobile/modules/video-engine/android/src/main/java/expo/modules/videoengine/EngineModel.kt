@@ -14,11 +14,20 @@ data class EngineClip(
   val speed: Double,
   val volume: Double,
   val fit: String,
+  /** 3×4 row-major affine color matrix on RGB, or null. */
+  val colorMatrix: DoubleArray?,
+  /** Zoom / reframe after fitting, or null. */
+  val transform: EngineTransform?,
 ) {
   /** Timeline duration of the clip (source range compressed by speed). */
   val duration: Double get() = (outPoint - inPoint) / speed
   val end: Double get() = start + duration
 }
+
+data class EngineTransform(val scale: Double, val xNorm: Double, val yNorm: Double)
+
+/** Transition across the cut after clips[index], centered on the cut. */
+data class EngineTransition(val index: Int, val kind: String, val half: Double)
 
 data class EngineText(
   val id: String,
@@ -70,6 +79,7 @@ data class EngineComposition(
   val clips: List<EngineClip>,
   val texts: List<EngineText>,
   val audio: List<EngineAudio>,
+  val transitions: List<EngineTransition>,
 ) {
   val duration: Double get() = clips.lastOrNull()?.end ?: 0.0
 
@@ -100,6 +110,12 @@ data class EngineComposition(
             speed = speed,
             volume = c.optDouble("volume", 1.0),
             fit = c.optString("fit", "contain"),
+            colorMatrix = c.optJSONArray("colorMatrix")?.let { m ->
+              if (m.length() == 12) DoubleArray(12) { k -> m.getDouble(k) } else null
+            },
+            transform = c.optJSONObject("transform")?.let { t ->
+              EngineTransform(t.getDouble("scale"), t.getDouble("xNorm"), t.getDouble("yNorm"))
+            },
           )
         }
       }
@@ -140,6 +156,12 @@ data class EngineComposition(
           )
         }
       } ?: emptyList()
+      val transitions = o.optJSONArray("transitions")?.let { arr ->
+        (0 until arr.length()).map { i ->
+          val t = arr.getJSONObject(i)
+          EngineTransition(t.getInt("index"), t.optString("kind", "crossfade"), t.getDouble("half"))
+        }
+      } ?: emptyList()
       return EngineComposition(
         width = o.getInt("width"),
         height = o.getInt("height"),
@@ -147,6 +169,7 @@ data class EngineComposition(
         clips = clips,
         texts = texts,
         audio = audio,
+        transitions = transitions,
       )
     }
   }

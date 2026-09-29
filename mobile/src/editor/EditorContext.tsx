@@ -29,6 +29,13 @@ import {
   removeMusic,
   removeOverlay,
   removeSfx,
+  removeTransition,
+  setClipFilters,
+  setClipFiltersAll,
+  setClipTransform,
+  setTransitionAfter,
+  transitionAfterClip,
+  updateTransition,
   setClipAudio,
   setClipFit,
   setClipSpeed,
@@ -41,7 +48,15 @@ import {
   updateSfx,
 } from '@timeline/project';
 import { synthDuration } from '@audio/sfxList';
-import type { MusicItem, Project, SfxItem, TextOverlay } from '@timeline/types';
+import type {
+  ClipFilters,
+  ClipTransform,
+  MusicItem,
+  Project,
+  SfxItem,
+  TextOverlay,
+  Transition,
+} from '@timeline/types';
 import type { VideoEngineViewRef } from '../../modules/video-engine';
 import { toEngineComposition } from '../engine/composition';
 import { clockTime, syncClock } from '../engine/playbackClock';
@@ -55,7 +70,10 @@ import {
 } from '../media/mediaLibrary';
 import { loadState, saveState } from './persistence';
 
-export type Selection = { kind: 'clip' | 'text' | 'music' | 'sfx'; id: string } | null;
+export type Selection = {
+  kind: 'clip' | 'text' | 'music' | 'sfx' | 'transition';
+  id: string;
+} | null;
 
 type History = { past: Project[]; present: Project; future: Project[]; coalesceKey: string | null };
 
@@ -99,6 +117,14 @@ type EditorValue = {
   patchSfx: (id: string, patch: Partial<SfxItem>) => void;
   /** Move the selected music / effect so it starts at the playhead. */
   moveSelectedToPlayhead: () => void;
+
+  setFilters: (clipId: string, patch: Partial<ClipFilters>) => void;
+  /** Replace all filters (presets / reset). */
+  setAllFilters: (clipId: string, filters: ClipFilters | undefined) => void;
+  setZoom: (clipId: string, patch: Partial<ClipTransform>) => void;
+  /** Select the transition after a clip, creating a crossfade if none. */
+  openTransitionAfter: (clipId: string) => void;
+  patchTransition: (id: string, patch: Partial<Transition>) => void;
 
   engineRef: RefObject<VideoEngineViewRef | null>;
   isPlaying: boolean;
@@ -278,7 +304,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           ? removeOverlay(p, id)
           : kind === 'music'
             ? removeMusic(p, id)
-            : removeSfx(p, id),
+            : kind === 'sfx'
+              ? removeSfx(p, id)
+              : removeTransition(p, id),
     );
     setSelection(null);
   }, [apply, selection]);
@@ -384,6 +412,50 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     else if (selection.kind === 'sfx') apply((p) => updateSfx(p, selection.id, { startSec: t }));
   }, [apply, selection]);
 
+  // ---- Look: color, zoom, transitions ----
+
+  const setFilters = useCallback(
+    (clipId: string, patch: Partial<ClipFilters>) =>
+      apply((p) => setClipFilters(p, clipId, patch), `filters:${clipId}`),
+    [apply],
+  );
+
+  const setAllFilters = useCallback(
+    (clipId: string, filters: ClipFilters | undefined) =>
+      apply((p) => setClipFiltersAll(p, clipId, filters)),
+    [apply],
+  );
+
+  const setZoom = useCallback(
+    (clipId: string, patch: Partial<ClipTransform>) =>
+      apply((p) => setClipTransform(p, clipId, patch)),
+    [apply],
+  );
+
+  const openTransitionAfter = useCallback(
+    (clipId: string) => {
+      const existing = transitionAfterClip(project, clipId);
+      if (existing) {
+        setSelection({ kind: 'transition', id: existing.id });
+        return;
+      }
+      const next = setTransitionAfter(project, clipId, 'crossfade', 0.5);
+      const created = transitionAfterClip(next, clipId);
+      if (!created) return;
+      apply((p) => ({
+        ...p,
+        transitions: [...p.transitions.filter((t) => t.afterClipId !== clipId), created],
+      }));
+      setSelection({ kind: 'transition', id: created.id });
+    },
+    [apply, project],
+  );
+
+  const patchTransition = useCallback(
+    (id: string, patch: Partial<Transition>) => apply((p) => updateTransition(p, id, patch)),
+    [apply],
+  );
+
   const newProject = useCallback(() => {
     pause();
     setSelection(null);
@@ -422,6 +494,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     patchMusic,
     patchSfx,
     moveSelectedToPlayhead,
+    setFilters,
+    setAllFilters,
+    setZoom,
+    openTransitionAfter,
+    patchTransition,
     engineRef,
     isPlaying,
     setIsPlaying,

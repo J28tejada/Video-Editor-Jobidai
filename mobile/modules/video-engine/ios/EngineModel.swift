@@ -11,6 +11,23 @@ struct EngineClip: Decodable {
   let speed: Double
   let volume: Double
   let fit: String
+  /// 3×4 row-major affine color matrix on sRGB, or nil.
+  let colorMatrix: [Double]?
+  /// Zoom / reframe after fitting, or nil.
+  let transform: EngineTransform?
+}
+
+struct EngineTransform: Decodable {
+  let scale: Double
+  let xNorm: Double
+  let yNorm: Double
+}
+
+/// Transition across the cut after clips[index], centered on the cut.
+struct EngineTransition: Decodable {
+  let index: Int
+  let kind: String
+  let half: Double
 }
 
 struct EngineText: Decodable {
@@ -50,8 +67,9 @@ struct EngineComposition: Decodable {
   let clips: [EngineClip]
   let texts: [EngineText]
   let audio: [EngineAudio]
+  let transitions: [EngineTransition]
 
-  enum CodingKeys: String, CodingKey { case width, height, fps, clips, texts, audio }
+  enum CodingKeys: String, CodingKey { case width, height, fps, clips, texts, audio, transitions }
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -61,6 +79,7 @@ struct EngineComposition: Decodable {
     clips = try c.decode([EngineClip].self, forKey: .clips)
     texts = try c.decodeIfPresent([EngineText].self, forKey: .texts) ?? []
     audio = try c.decodeIfPresent([EngineAudio].self, forKey: .audio) ?? []
+    transitions = try c.decodeIfPresent([EngineTransition].self, forKey: .transitions) ?? []
   }
 
   static func decode(_ json: String) throws -> EngineComposition {

@@ -34,8 +34,10 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
   if (selection?.kind === 'clip') {
     tools = [
       { icon: 'split', label: 'Cortar', onPress: split },
+      { icon: 'filters', label: 'Filtros', onPress: () => openSheet('filters') },
       { icon: 'speed', label: 'Velocidad', onPress: () => openSheet('speed') },
       { icon: 'volume', label: 'Volumen', onPress: () => openSheet('volume') },
+      { icon: 'zoom', label: 'Zoom', onPress: () => openSheet('zoom') },
       { icon: 'fit', label: 'Encuadre', onPress: () => openSheet('fit') },
       { icon: 'delete', label: 'Borrar', onPress: removeSelected, danger: true },
       { icon: 'close', label: 'Cerrar', onPress: () => select(null) },
@@ -46,6 +48,12 @@ export function Toolbar({ openSheet }: { openSheet: (s: SheetKind) => void }) {
       { icon: 'edit', label: 'Editar', onPress: () => openSheet(sheet) },
       { icon: 'toPlayhead', label: 'Al cursor', onPress: moveSelectedToPlayhead },
       { icon: 'delete', label: 'Borrar', onPress: removeSelected, danger: true },
+      { icon: 'close', label: 'Cerrar', onPress: () => select(null) },
+    ];
+  } else if (selection?.kind === 'transition') {
+    tools = [
+      { icon: 'edit', label: 'Editar', onPress: () => openSheet('transition') },
+      { icon: 'delete', label: 'Quitar', onPress: removeSelected, danger: true },
       { icon: 'close', label: 'Cerrar', onPress: () => select(null) },
     ];
   } else if (selection?.kind === 'text') {

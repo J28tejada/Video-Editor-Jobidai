@@ -2,30 +2,25 @@ package expo.modules.videoengine
 
 import android.content.Context
 import android.graphics.Color
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
-import kotlin.math.abs
+import java.util.concurrent.Executors
 
 /**
- * Native preview: an ExoPlayer playlist of clipped media items, one per
- * timeline clip, decoded by the hardware codecs (MediaCodec). Speed, volume
- * and fit are applied per clip as playback moves between items. Music and
- * sound effects play from a pre-mixed audio bed on a second player kept in
- * sync with the timeline. JS drives it through the view ref (play / pause /
- * seek) and receives time updates.
+ * Native preview on Media3 CompositionPlayer: it plays the very composition
+ * the export encodes (clips with fit/color/zoom/speed, transitions, music and
+ * effects), decoded by the hardware codecs and composited on the GPU. Only
+ * texts are left out — React Native draws them on top so they stay draggable.
+ * JS drives it through the view ref (play / pause / seek).
  */
 @UnstableApi
 class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
@@ -34,7 +29,7 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
   private val onEnded by EventDispatcher()
   private val onError by EventDispatcher()
 
-  private val player: ExoPlayer = ExoPlayer.Builder(context).build()
+  private val player: CompositionPlayer = CompositionPlayer.Builder(context).build()
   private val playerView = PlayerView(context).apply {
     layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
     useController = false
@@ -46,20 +41,15 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
 
   private var spec: EngineComposition? = null
   private var compositionJSON: String? = null
+  private var buildGeneration = 0
   private var released = false
-
-  // Audio bed (music + sound effects), rendered off the video path.
-  private val bedPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
-  private val bedRenderer = AudioBedRenderer(context)
-  private var bedKey: String? = null
-  private var bedLoaded = false
+  private var scrubbing = false
 
   private val handler = Handler(Looper.getMainLooper())
   private val ticker = object : Runnable {
     override fun run() {
       if (released) return
       emitTime()
-      syncBed(force = false)
       if (player.isPlaying) handler.postDelayed(this, 33)
     }
   }
@@ -68,20 +58,14 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
     setBackgroundColor(Color.BLACK)
     addView(playerView)
     player.addListener(object : Player.Listener {
-      override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        applyClipSettings()
-      }
-
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         handler.removeCallbacks(ticker)
         if (isPlaying) handler.post(ticker) else emitTime()
-        syncBed(force = false)
       }
 
       override fun onPlaybackStateChanged(state: Int) {
         if (state == Player.STATE_ENDED) {
           player.playWhenReady = false
-          bedPlayer.playWhenReady = false
           onTimeUpdate(mapOf("time" to (spec?.duration ?: 0.0), "playing" to false))
           onEnded(mapOf<String, Any>())
         }
@@ -104,75 +88,36 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
       onError(mapOf("message" to (e.message ?: "invalid composition")))
       return
     }
-    val resumeAt = currentTime()
-    val wasPlaying = player.playWhenReady
-    spec = next
-    updateBed(next)
+    val resumeMs = player.currentPosition
+    val generation = ++buildGeneration
     if (next.clips.isEmpty()) {
-      player.clearMediaItems()
+      spec = next
+      player.stop()
       onReady(mapOf("duration" to 0.0))
       return
     }
-    val items = next.clips.map { clip ->
-      MediaItem.Builder()
-        .setUri(Uri.parse(clip.uri))
-        .setMediaId(clip.id)
-        .setClippingConfiguration(
-          MediaItem.ClippingConfiguration.Builder()
-            .setStartPositionMs((clip.inPoint * 1000).toLong())
-            .setEndPositionMs((clip.outPoint * 1000).toLong())
-            .build()
-        )
-        .build()
+    // Building may extract freeze frames (disk I/O): do it off the UI thread.
+    // The preview renders at 720p (short side) to stay light on the GPU.
+    val (width, height) = renderSize(next, PREVIEW_SHORT_SIDE)
+    builder.execute {
+      val composition = try {
+        CompositionFactory.build(context, next, width, height, includeTexts = false)
+      } catch (e: Exception) {
+        handler.post { if (!released) onError(mapOf("message" to (e.message ?: "composition error"))) }
+        return@execute
+      }
+      handler.post {
+        if (released || generation != buildGeneration) return@post
+        val wasPlaying = player.playWhenReady
+        spec = next
+        val startMs = resumeMs.coerceIn(0L, ((next.duration - 0.01) * 1000).toLong().coerceAtLeast(0L))
+        player.setComposition(composition, startMs)
+        player.prepare()
+        player.playWhenReady = wasPlaying
+        onReady(mapOf("duration" to next.duration))
+        emitTime()
+      }
     }
-    player.setMediaItems(items)
-    player.prepare()
-    seekInternal(resumeAt.coerceAtMost((next.duration - 0.01).coerceAtLeast(0.0)), exact = true)
-    player.playWhenReady = wasPlaying
-    onReady(mapOf("duration" to next.duration))
-  }
-
-  /** Re-render the audio bed when the music / effects mix changes. */
-  private fun updateBed(next: EngineComposition) {
-    val key = "${next.audio.hashCode()}-${next.duration}"
-    if (key == bedKey) return
-    bedKey = key
-    bedLoaded = false
-    bedPlayer.clearMediaItems()
-    bedRenderer.render(next.audio, next.duration) { uri ->
-      if (released || bedKey != key) return@render
-      if (uri == null) return@render
-      bedPlayer.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
-      bedPlayer.prepare()
-      bedLoaded = true
-      syncBed(force = true)
-    }
-  }
-
-  /**
-   * Keep the bed at the timeline position and in the same play state. Small
-   * drift is tolerated; beyond 120 ms the bed is re-seeked. Follows the
-   * intent to play (not momentary buffering at clip boundaries) so music
-   * doesn't stutter between clips.
-   */
-  private fun syncBed(force: Boolean) {
-    if (!bedLoaded) return
-    val t = currentTime()
-    val playing = player.playWhenReady && player.playbackState != Player.STATE_ENDED
-    val drift = abs(bedPlayer.currentPosition / 1000.0 - t)
-    if (force || drift > 0.12) bedPlayer.seekTo((t * 1000).toLong())
-    if (bedPlayer.playWhenReady != playing) bedPlayer.playWhenReady = playing
-  }
-
-  /** Speed, volume and fit of the clip currently playing. */
-  private fun applyClipSettings() {
-    val clip = spec?.clips?.getOrNull(player.currentMediaItemIndex) ?: return
-    player.playbackParameters = PlaybackParameters(clip.speed.toFloat())
-    // ExoPlayer volume is 0..1; boosts above 1 are clamped in preview.
-    player.volume = clip.volume.toFloat().coerceIn(0f, 1f)
-    playerView.resizeMode =
-      if (clip.fit == "cover") AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-      else AspectRatioFrameLayout.RESIZE_MODE_FIT
   }
 
   // endregion
@@ -180,39 +125,38 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
   // region Transport
 
   fun play() {
-    if (spec?.clips.isNullOrEmpty()) return
-    if (player.playbackState == Player.STATE_ENDED) seekInternal(0.0, exact = true)
+    val s = spec ?: return
+    if (s.clips.isEmpty()) return
+    setScrubbing(false)
+    if (player.playbackState == Player.STATE_ENDED || currentTime() >= s.duration - 0.05) {
+      player.seekTo(0)
+    }
     player.playWhenReady = true
   }
 
   fun pause() {
     player.playWhenReady = false
-    bedPlayer.playWhenReady = false
     emitTime()
   }
 
+  /** Fast, keyframe-friendly seeks while scrubbing; exact when the finger lifts. */
   fun seek(time: Double, exact: Boolean) {
-    seekInternal(time, exact)
+    val s = spec ?: return
+    setScrubbing(!exact)
+    player.seekTo((time.coerceIn(0.0, s.duration) * 1000).toLong())
     emitTime()
-    syncBed(force = true)
   }
 
-  private fun seekInternal(time: Double, exact: Boolean) {
-    val s = spec ?: return
-    val index = s.clipIndexAt(time)
-    if (index < 0) return
-    val clip = s.clips[index]
-    val offsetSec = ((time - clip.start) * clip.speed).coerceIn(0.0, clip.outPoint - clip.inPoint)
-    player.setSeekParameters(if (exact) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC)
-    player.seekTo(index, (offsetSec * 1000).toLong())
-    applyClipSettings()
+  private fun setScrubbing(enabled: Boolean) {
+    if (scrubbing == enabled) return
+    scrubbing = enabled
+    player.setScrubbingModeEnabled(enabled)
   }
 
   /** Current position on the composition timeline, in seconds. */
   private fun currentTime(): Double {
     val s = spec ?: return 0.0
-    val clip = s.clips.getOrNull(player.currentMediaItemIndex) ?: return 0.0
-    return (clip.start + player.currentPosition / 1000.0 / clip.speed).coerceIn(0.0, s.duration)
+    return (player.currentPosition / 1000.0).coerceIn(0.0, s.duration)
   }
 
   private fun emitTime() {
@@ -226,9 +170,12 @@ class VideoEngineView(context: Context, appContext: AppContext) : ExpoView(conte
     if (released) return
     released = true
     handler.removeCallbacks(ticker)
-    bedRenderer.cancel()
-    bedPlayer.release()
     playerView.player = null
     player.release()
+  }
+
+  companion object {
+    private const val PREVIEW_SHORT_SIDE = 720.0
+    private val builder = Executors.newSingleThreadExecutor()
   }
 }

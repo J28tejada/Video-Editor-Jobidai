@@ -22,7 +22,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
-import { primaryTrack } from '@timeline/project';
+import { primaryTrack, transitionAfterClip } from '@timeline/project';
 import { clipDuration, clipSpeed, type Clip, type Project, type TextOverlay } from '@timeline/types';
 import { useEditor } from '../editor/EditorContext';
 import { clockPlaying, clockTime } from '../engine/playbackClock';
@@ -32,6 +32,7 @@ import { useThumbnails } from './useThumbnails';
 const CLIP_H = 56;
 const TEXT_H = 28;
 const AUDIO_H = 24;
+const CUT_SIZE = 20;
 const RULER_H = 20;
 const HANDLE_W = 14;
 const SCRUB_INTERVAL_MS = 50;
@@ -148,6 +149,9 @@ export function Timeline() {
                   onTrimActive={setTrimming}
                 />
               ))}
+              {clips.slice(0, -1).map((clip) => (
+                <CutMarker key={`cut_${clip.id}`} clip={clip} />
+              ))}
             </View>
             <TextLane overlays={project.overlays} />
             <AudioLanes project={project} duration={duration} />
@@ -259,6 +263,28 @@ function ClipBlock({
           </View>
         </>
       )}
+    </Pressable>
+  );
+}
+
+/** Button on the cut after a clip: adds or opens its transition. */
+function CutMarker({ clip }: { clip: Clip }) {
+  const { project, selection, openTransitionAfter } = useEditor();
+  const tr = transitionAfterClip(project, clip.id);
+  const selected = !!tr && selection?.kind === 'transition' && selection.id === tr.id;
+  const x = (clip.startInTimeline + clipDuration(clip)) * PPS;
+  return (
+    <Pressable
+      hitSlop={8}
+      onPress={() => openTransitionAfter(clip.id)}
+      style={[
+        styles.cut,
+        { left: x - CUT_SIZE / 2 },
+        tr && styles.cutActive,
+        selected && styles.cutSelected,
+      ]}
+    >
+      <Text style={styles.cutLabel}>{tr ? '⇄' : '+'}</Text>
     </Pressable>
   );
 }
@@ -392,6 +418,21 @@ const styles = StyleSheet.create({
   },
   handleGrip: { width: 3, height: 18, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.5)' },
   textLane: { height: TEXT_H, marginTop: 6 },
+  cut: {
+    position: 'absolute',
+    top: (CLIP_H - CUT_SIZE) / 2,
+    width: CUT_SIZE,
+    height: CUT_SIZE,
+    borderRadius: CUT_SIZE / 2,
+    backgroundColor: colors.panelHigh,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cutActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  cutSelected: { borderColor: colors.clipSelected },
+  cutLabel: { color: '#fff', fontSize: 11, fontWeight: '800', lineHeight: 13 },
   textBlock: {
     position: 'absolute',
     top: 0,

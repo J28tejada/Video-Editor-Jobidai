@@ -8,6 +8,7 @@ import { colors, radius } from '../ui/theme';
 import { AudioAddSheet, MusicSheet, SfxSheet } from './AudioSheets';
 import { ClipSheets, FormatSheet, TextSheet, type SheetKind } from './EditSheets';
 import { ExportSheet } from './ExportSheet';
+import { FilterSheet, TransitionSheet, ZoomSheet } from './LookSheets';
 import { Preview } from './Preview';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
@@ -62,6 +63,9 @@ export function EditorScreen() {
       <AudioAddSheet open={sheet} onClose={close} openSheet={setSheet} />
       <MusicSheet open={sheet} onClose={close} />
       <SfxSheet open={sheet} onClose={close} />
+      <FilterSheet open={sheet} onClose={close} />
+      <ZoomSheet open={sheet} onClose={close} />
+      <TransitionSheet open={sheet} onClose={close} />
     </SafeAreaView>
   );
 }

@@ -10,32 +10,52 @@ struct BuiltComposition {
 }
 
 /// Turns the render description into an AVMutableComposition:
-///  - one video + one audio composition track; each clip's trimmed range is
-///    inserted back to back and time-scaled for its speed;
-///  - one video-composition instruction per clip carrying that clip's
-///    fit transform (sources may differ in size/orientation);
-///  - an audio mix applying each clip's volume from its start time.
-/// Decoding and compositing then run on the system's hardware pipeline.
+///  - two video tracks (A/B roll): consecutive clips alternate, so both sides
+///    of a transition are available at once. Each clip is extended past its
+///    cut by the transition half on either side — with real source frames
+///    when the trim leaves some, else by holding the first/last frame;
+///  - one audio track with the clips' sound back to back (time-scaled for
+///    speed) and an audio mix for per-clip volume;
+///  - EngineInstructions for the custom Core Image compositor: one per clip
+///    body and one per transition window.
+/// Decoding runs on the hardware pipeline; compositing on the GPU.
 enum CompositionBuilder {
   static let timescale: CMTimeScale = 600
+  /// Duration of the single frame used for freeze frames.
+  private static let frame = CMTime(value: 1, timescale: 30)
 
   static func build(_ spec: EngineComposition, renderSize: CGSize) async throws -> BuiltComposition {
     let composition = AVMutableComposition()
     guard
-      let videoTrack = composition.addMutableTrack(
+      let trackA = composition.addMutableTrack(
+        withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+      let trackB = composition.addMutableTrack(
         withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
       let audioTrack = composition.addMutableTrack(
         withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
     else {
       throw InvalidCompositionException("could not create composition tracks")
     }
+    let videoTracks = [trackA, trackB]
 
-    var instructions: [AVMutableVideoCompositionInstruction] = []
+    // Transition halves on each side of every clip.
+    let n = spec.clips.count
+    var halfBefore = [Double](repeating: 0, count: n)
+    var halfAfter = [Double](repeating: 0, count: n)
+    var kindAfter = [String](repeating: "crossfade", count: n)
+    for tr in spec.transitions where tr.index >= 0 && tr.index + 1 < n && tr.half > 0 {
+      halfAfter[tr.index] = tr.half
+      halfBefore[tr.index + 1] = tr.half
+      kindAfter[tr.index] = tr.kind
+    }
+
     let audioParams = AVMutableAudioMixInputParameters(track: audioTrack)
     var hasAudio = false
     var cursor = CMTime.zero
+    var layers: [ClipLayer] = []
+    var bodies: [(start: Double, end: Double)] = []
 
-    for clip in spec.clips {
+    for (i, clip) in spec.clips.enumerated() {
       guard let url = URL(string: clip.uri) else { throw MediaLoadException(clip.uri) }
       let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
       guard let srcVideo = try await asset.loadTracks(withMediaType: .video).first else {
@@ -50,54 +70,96 @@ enum CompositionBuilder {
       let outTime = CMTimeMinimum(
         CMTime(seconds: clip.outPoint, preferredTimescale: timescale), assetDuration)
       guard outTime > inTime else { continue }
-      let sourceRange = CMTimeRange(start: inTime, end: outTime)
+      let speed = clip.speed > 0 ? clip.speed : 1
+      let track = videoTracks[layers.count % 2]
 
-      try videoTrack.insertTimeRange(sourceRange, of: srcVideo, at: cursor)
+      // Incoming transition: frames before the in-point (or a held first frame).
+      let pre = halfBefore[i]
+      if pre > 0 {
+        var at = cursor - seconds(pre)
+        let available = min(pre * speed, inTime.seconds)
+        let hold = pre - available / speed
+        if hold > 0.001 {
+          at = try insert(
+            track, srcVideo, from: inTime - seconds(available), length: frame, at: at,
+            duration: seconds(hold))
+        }
+        if available > 0.001 {
+          at = try insert(
+            track, srcVideo, from: inTime - seconds(available), length: seconds(available), at: at,
+            duration: seconds(available / speed))
+        }
+      }
+
+      // Body.
+      let bodyDuration = CMTimeMultiplyByFloat64(outTime - inTime, multiplier: 1 / speed)
+      _ = try insert(track, srcVideo, from: inTime, length: outTime - inTime, at: cursor, duration: bodyDuration)
       if let srcAudio {
-        try audioTrack.insertTimeRange(sourceRange, of: srcAudio, at: cursor)
+        _ = try insert(audioTrack, srcAudio, from: inTime, length: outTime - inTime, at: cursor, duration: bodyDuration)
         hasAudio = true
       }
+      let clipEnd = cursor + bodyDuration
 
-      // Speed: stretch/compress the inserted segment on the composition timeline.
-      let speed = clip.speed > 0 ? clip.speed : 1
-      var segmentDuration = sourceRange.duration
-      if abs(speed - 1) > 0.001 {
-        let scaled = CMTimeMultiplyByFloat64(segmentDuration, multiplier: 1 / speed)
-        let inserted = CMTimeRange(start: cursor, duration: segmentDuration)
-        videoTrack.scaleTimeRange(inserted, toDuration: scaled)
-        if srcAudio != nil { audioTrack.scaleTimeRange(inserted, toDuration: scaled) }
-        segmentDuration = scaled
+      // Outgoing transition: frames after the out-point (or a held last frame).
+      let post = halfAfter[i]
+      if post > 0 {
+        var at = clipEnd
+        let available = min(post * speed, max(0, (assetDuration - outTime).seconds))
+        if available > 0.001 {
+          at = try insert(
+            track, srcVideo, from: outTime, length: seconds(available), at: at,
+            duration: seconds(available / speed))
+        }
+        let hold = post - available / speed
+        if hold > 0.001 {
+          let last = CMTimeMaximum(.zero, outTime + seconds(available) - frame)
+          _ = try insert(track, srcVideo, from: last, length: frame, at: at, duration: seconds(hold))
+        }
       }
-      let segment = CMTimeRange(start: cursor, duration: segmentDuration)
 
-      let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
-      layer.setTransform(
-        fitTransform(
-          natural: naturalSize, preferred: preferredTransform, render: renderSize,
-          cover: clip.fit == "cover"),
-        at: segment.start)
-      let instruction = AVMutableVideoCompositionInstruction()
-      instruction.timeRange = segment
-      instruction.layerInstructions = [layer]
-      instructions.append(instruction)
+      layers.append(
+        ClipLayer(
+          trackID: track.trackID,
+          transform: placement(
+            natural: naturalSize, preferred: preferredTransform, render: renderSize,
+            cover: clip.fit == "cover", zoom: clip.transform),
+          colorMatrix: clip.colorMatrix))
+      bodies.append((cursor.seconds, clipEnd.seconds))
 
       // AVAudioMix volume is limited to 0...1; boosts above 1 are clamped.
-      audioParams.setVolume(Float(min(max(clip.volume, 0), 1)), at: segment.start)
-
-      cursor = segment.end
+      audioParams.setVolume(Float(min(max(clip.volume, 0), 1)), at: cursor)
+      cursor = clipEnd
     }
 
     if !hasAudio { composition.removeTrack(audioTrack) }
-
     let layerParams = try await addAudioLayers(spec.audio, to: composition, videoEnd: cursor)
 
-    // Instructions must tile the whole composition exactly; absorb rounding
-    // drift in the last one.
-    if let last = instructions.last, last.timeRange.end != composition.duration {
-      last.timeRange = CMTimeRange(start: last.timeRange.start, end: composition.duration)
+    // Instructions tile [0, end]: clip bodies between transition windows.
+    var instructions: [EngineInstruction] = []
+    for (i, layer) in layers.enumerated() {
+      let bodyStart = bodies[i].start + halfBefore[i]
+      let bodyEnd = bodies[i].end - halfAfter[i]
+      if bodyEnd > bodyStart + 0.0005 {
+        instructions.append(
+          EngineInstruction(timeRange: range(bodyStart, bodyEnd), from: layer))
+      }
+      if halfAfter[i] > 0, i + 1 < layers.count {
+        instructions.append(
+          EngineInstruction(
+            timeRange: range(bodyEnd, bodies[i].end + halfAfter[i]), from: layer,
+            to: layers[i + 1], kind: kindAfter[i]))
+      }
+    }
+    // Absorb rounding drift so the instructions end exactly at the composition end.
+    if let last = instructions.popLast() {
+      instructions.append(
+        EngineInstruction(
+          timeRange: CMTimeRange(start: last.timeRange.start, end: composition.duration),
+          from: last.from, to: last.to, kind: last.kind))
     }
 
     let videoComposition = AVMutableVideoComposition()
+    videoComposition.customVideoCompositorClass = EngineCompositor.self
     videoComposition.renderSize = renderSize
     videoComposition.frameDuration = CMTime(
       value: 1, timescale: CMTimeScale(max(1, min(120, spec.fps.rounded()))))
@@ -114,6 +176,29 @@ enum CompositionBuilder {
     return BuiltComposition(
       asset: composition, videoComposition: videoComposition, audioMix: audioMix,
       duration: composition.duration.seconds)
+  }
+
+  /// Inserts `length` of source starting at `from` so that it occupies
+  /// `duration` on the timeline at `at` (stretching a single frame = freeze).
+  /// Returns the end time.
+  @discardableResult
+  private static func insert(
+    _ track: AVMutableCompositionTrack, _ source: AVAssetTrack, from: CMTime, length: CMTime,
+    at: CMTime, duration: CMTime
+  ) throws -> CMTime {
+    try track.insertTimeRange(CMTimeRange(start: from, duration: length), of: source, at: at)
+    if CMTimeCompare(length, duration) != 0 {
+      track.scaleTimeRange(CMTimeRange(start: at, duration: length), toDuration: duration)
+    }
+    return at + duration
+  }
+
+  private static func seconds(_ s: Double) -> CMTime {
+    CMTime(seconds: s, preferredTimescale: timescale)
+  }
+
+  private static func range(_ a: Double, _ b: Double) -> CMTimeRange {
+    CMTimeRange(start: seconds(a), end: seconds(b))
   }
 
   /// Music and sound-effect layers. Layers that don't overlap in time share a
@@ -214,25 +299,27 @@ enum CompositionBuilder {
   }
 
   /// Maps a source track (with its orientation transform) into the render
-  /// frame: contain = letterbox, cover = fill + crop, centered.
-  static func fitTransform(
-    natural: CGSize, preferred: CGAffineTransform, render: CGSize, cover: Bool
+  /// frame: contain = letterbox, cover = fill + crop; then the optional zoom
+  /// scales the fitted frame and centers it at (xNorm, yNorm).
+  static func placement(
+    natural: CGSize, preferred: CGAffineTransform, render: CGSize, cover: Bool,
+    zoom: EngineTransform?
   ) -> CGAffineTransform {
     let oriented = CGRect(origin: .zero, size: natural).applying(preferred)
     let dw = abs(oriented.width)
     let dh = abs(oriented.height)
     guard dw > 0, dh > 0 else { return preferred }
-    let scale =
+    let fit =
       cover
       ? max(render.width / dw, render.height / dh)
       : min(render.width / dw, render.height / dh)
+    let scale = fit * CGFloat(zoom?.scale ?? 1)
+    let cx = CGFloat(zoom?.xNorm ?? 0.5) * render.width
+    let cy = CGFloat(zoom?.yNorm ?? 0.5) * render.height
     return
       preferred
       .concatenating(CGAffineTransform(translationX: -oriented.minX, y: -oriented.minY))
       .concatenating(CGAffineTransform(scaleX: scale, y: scale))
-      .concatenating(
-        CGAffineTransform(
-          translationX: (render.width - dw * scale) / 2,
-          y: (render.height - dh * scale) / 2))
+      .concatenating(CGAffineTransform(translationX: cx - dw * scale / 2, y: cy - dh * scale / 2))
   }
 }

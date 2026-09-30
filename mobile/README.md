@@ -41,6 +41,18 @@ npx eas-cli@latest build --profile production --platform all       # tiendas
 Antes de publicar, cambia `ios.bundleIdentifier` y `android.package` en
 `app.json` (ahora `ai.jobid.videoeditor`) por los de tu cuenta.
 
+## APK de Android desde GitHub
+
+El flujo `.github/workflows/android-apk.yml` compila un APK instalable en cada
+push a `main` que toque `mobile/` o `src/core/` (y a mano con *Run workflow*).
+Descárgalo en GitHub → **Actions** → **Android APK** → última ejecución →
+**Artifacts**, descomprime el zip y abre el `.apk` en el teléfono (permite
+"instalar apps desconocidas").
+
+Para que el asistente funcione, en *Settings → Secrets and variables →
+Actions* define la variable `AGENT_URL` (`https://<tu-sitio>.vercel.app/api/agent`)
+y, si usas `AGENT_APP_KEY` en Vercel, el secreto `AGENT_APP_KEY`.
+
 ## Estructura
 
 ```

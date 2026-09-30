@@ -1,0 +1,70 @@
+# Builds an installable Android APK of the mobile app (mobile/) and uploads it
+# as a workflow artifact. Download it from the run page (Actions tab →
+# "Android APK" → latest run → Artifacts), unzip, and open the .apk on the phone.
+#
+# Optional configuration (Settings → Secrets and variables → Actions):
+#   - Variable AGENT_URL: the assistant backend, e.g. https://<site>.vercel.app/api/agent
+#   - Secret   AGENT_APP_KEY: must match AGENT_APP_KEY on Vercel, if set there
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'src/core/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_PUBLIC_AGENT_URL: ${{ vars.AGENT_URL }}
+      EXPO_PUBLIC_AGENT_KEY: ${{ secrets.AGENT_APP_KEY }}
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK (arm64)
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Name the APK
+        run: |
+          mkdir -p dist-apk
+          cp android/app/build/outputs/apk/release/app-release.apk \
+            "dist-apk/editor-de-video-${GITHUB_SHA::7}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-de-video-apk
+          path: mobile/dist-apk/*.apk
+          retention-days: 30

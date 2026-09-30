@@ -47,7 +47,9 @@ El flujo `.github/workflows/android-apk.yml` compila un APK instalable en cada
 push a `main` que toque `mobile/` o `src/core/` (y a mano con *Run workflow*).
 Descárgalo en GitHub → **Actions** → **Android APK** → última ejecución →
 **Artifacts**, descomprime el zip y abre el `.apk` en el teléfono (permite
-"instalar apps desconocidas").
+"instalar apps desconocidas"). El APK sirve para teléfonos (arm64) y para
+el emulador de Android Studio en cualquier computadora (x86_64 o arm64):
+arrástralo a la ventana del emulador para instalarlo.
 
 Para que el asistente funcione, en *Settings → Secrets and variables →
 Actions* define la variable `AGENT_URL` (`https://<tu-sitio>.vercel.app/api/agent`)
